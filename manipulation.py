@@ -62,7 +62,7 @@ def set_home_pose(model, data, arm_addrs):
 
 
 def _goto_linear(model, data, hand_id, arm_addrs, arm_actuator_ids, target_pos, target_R,
-                  n_wp=N_WAYPOINTS, steps_per_wp=STEPS_PER_WAYPOINT):
+                  n_wp=N_WAYPOINTS, steps_per_wp=STEPS_PER_WAYPOINT, frame_callback=None):
     tcp, _ = get_tcp_pose(model, data, hand_id)
     for a in np.linspace(0, 1, n_wp + 1)[1:]:
         wp = tcp * (1 - a) + np.asarray(target_pos) * a
@@ -72,12 +72,19 @@ def _goto_linear(model, data, hand_id, arm_addrs, arm_actuator_ids, target_pos, 
             for act_id, q in zip(arm_actuator_ids, target_qpos):
                 data.ctrl[act_id] = q
             mujoco.mj_step(model, data)
+        # One frame per waypoint (not per whole segment) so recorded video
+        # shows smooth motion rather than a jump-cut between segment ends.
+        if frame_callback:
+            frame_callback()
 
 
-def _set_gripper(model, data, gripper_actuator_id, ctrl_value, steps=GRASP_STEPS):
-    for _ in range(steps):
+def _set_gripper(model, data, gripper_actuator_id, ctrl_value, steps=GRASP_STEPS, frame_callback=None):
+    capture_every = max(steps // 4, 1)
+    for i in range(steps):
         data.ctrl[gripper_actuator_id] = ctrl_value
         mujoco.mj_step(model, data)
+        if frame_callback and i % capture_every == 0:
+            frame_callback()
 
 
 def _activate_weld(model, data, eq_id, hand_id, obj_body_id):
@@ -133,9 +140,8 @@ def run_pick_and_place(model, data, object_name: str, pick_xy, place_xy, grasp_y
     lx, ly = place_xy
 
     def goto(target_pos, **kwargs):
-        _goto_linear(model, data, hand_id, arm_addrs, arm_actuator_ids, target_pos, R, **kwargs)
-        if frame_callback:
-            frame_callback()
+        _goto_linear(model, data, hand_id, arm_addrs, arm_actuator_ids, target_pos, R,
+                     frame_callback=frame_callback, **kwargs)
 
     # 1. Pre-grasp: above the object, gripper open.
     _set_gripper(model, data, gripper_actuator_id, GRIPPER_OPEN_CTRL, steps=1)
@@ -145,7 +151,7 @@ def run_pick_and_place(model, data, object_name: str, pick_xy, place_xy, grasp_y
     goto([px, py, grasp_height])
 
     # 3. Close gripper, then lock the weld at the pose it actually grasped at.
-    _set_gripper(model, data, gripper_actuator_id, GRIPPER_CLOSED_CTRL)
+    _set_gripper(model, data, gripper_actuator_id, GRIPPER_CLOSED_CTRL, frame_callback=frame_callback)
     _activate_weld(model, data, eq_id, hand_id, obj_body_id)
 
     # 4. Lift.
@@ -159,7 +165,7 @@ def run_pick_and_place(model, data, object_name: str, pick_xy, place_xy, grasp_y
 
     # 7. Release: drop the weld, then open the gripper.
     _deactivate_weld(data, eq_id)
-    _set_gripper(model, data, gripper_actuator_id, GRIPPER_OPEN_CTRL)
+    _set_gripper(model, data, gripper_actuator_id, GRIPPER_OPEN_CTRL, frame_callback=frame_callback)
 
     # 8. Retract.
     goto([lx, ly, grasp_height + APPROACH_HEIGHT])
