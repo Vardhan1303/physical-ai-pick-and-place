@@ -42,9 +42,9 @@
 
     <geom name="table" type="box" pos="0.5 0 0.2" size="0.3 0.35 0.2" material="table_mat"/>
 
-    <geom name="bin_square" type="box" pos="0.75 -0.25 0.401" size="0.06 0.06 0.001" material="bin_square_mat" contype="0" conaffinity="0"/>
-    <geom name="bin_circle" type="box" pos="0.75 0 0.401" size="0.06 0.06 0.001" material="bin_circle_mat" contype="0" conaffinity="0"/>
-    <geom name="bin_triangle" type="box" pos="0.75 0.25 0.401" size="0.06 0.06 0.001" material="bin_triangle_mat" contype="0" conaffinity="0"/>
+    <geom name="bin_square" type="box" pos="0.55 -0.25 0.401" size="0.06 0.06 0.001" material="bin_square_mat" contype="0" conaffinity="0"/>
+    <geom name="bin_circle" type="box" pos="0.55 0 0.401" size="0.06 0.06 0.001" material="bin_circle_mat" contype="0" conaffinity="0"/>
+    <geom name="bin_triangle" type="box" pos="0.55 0.25 0.401" size="0.06 0.06 0.001" material="bin_triangle_mat" contype="0" conaffinity="0"/>
 
     <body name="obj_square" pos="0.4 -0.2 0.4">
       <freejoint/>
