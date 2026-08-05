@@ -60,7 +60,7 @@
 
     <body name="obj_triangle" pos="0.4 0.2 0.4">
       <freejoint/>
-      <geom name="obj_triangle_geom" type="mesh" mesh="triangular_prism" material="triangle_mat" mass="0.05"/>
+      <geom name="obj_triangle_geom" type="mesh" mesh="triangular_prism" material="triangle_mat" mass="0.05" friction="1.5 0.5 0.5"/>
       <geom name="obj_triangle_marker" type="box" pos="0 0 0.0405" size="0.011 0.011 0.0005" material="marker_triangle_mat" contype="0" conaffinity="0"/>
     </body>
   </worldbody>
