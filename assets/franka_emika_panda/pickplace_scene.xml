@@ -35,7 +35,12 @@
   </asset>
 
   <worldbody>
-    <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
+    <!-- castshadow disabled: a straight-down directional light casts the
+         gripper's shadow directly onto the table right under the fingers,
+         which visually reads as the gripper "pressing into" the table even
+         though there's no actual contact/interpenetration (verified via
+         xpos: hand stays 10cm+ above the table top during approach). -->
+    <light pos="0 0 1.5" dir="0 0 -1" directional="true" castshadow="false"/>
     <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
 
     <camera name="top_down" pos="0.5 0 1.0" xyaxes="1 0 0 0 1 0"/>
