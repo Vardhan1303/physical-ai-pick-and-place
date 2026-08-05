@@ -1,46 +1,77 @@
 #!/usr/bin/env python
 """
 manipulation.py — executes a full pick-and-place motion on the Panda arm
-given a 3D pick point, a 3D place point, and a grasp yaw angle. Shared by
-the real perception-driven script (pick_and_place.py) and by tests that
-substitute ground-truth segmentation for FLIP.
+given a 3D pick point, a 3D place point, a grasp yaw angle, and the object
+body to grasp.
 
 The arm's joint actuators are PD position servos (built into the Menagerie
 Panda model), so "moving" a joint means setting data.ctrl to the target
-angle and stepping physics long enough for the PD controller to converge —
-no separate trajectory/motion-planning library needed for this demo.
+angle and stepping physics long enough for the PD controller to converge.
+Motion between waypoints is broken into fine sub-steps (goto_linear) to
+keep the Cartesian path roughly straight rather than letting joint-space
+PD control bow through an arbitrary curve between two poses.
+
+GRASP HOLD: pure friction grasping of small rigid objects in MuJoCo proved
+unreliable under lateral motion after extensive tuning (friction, contact
+solver softness, grip stiffness, motion smoothness) — verified by direct
+testing, not assumed. Since this project's purpose is a working perception
+-> action demo rather than a grasp-physics research contribution, a weld
+equality constraint is activated between the gripper and object the moment
+it's grasped, and released at the target bin. The fingers still physically
+close around the object for a real contact at pick/place; only the
+"carrying" phase is assisted.
 """
 import numpy as np
 import mujoco
 
-from ik_utils import solve_ik, get_arm_qpos_addrs
+from ik_utils import solve_ik, get_tcp_pose, get_arm_qpos_addrs
 
 GRIPPER_OPEN_CTRL = 255.0
 GRIPPER_CLOSED_CTRL = 0.0
 
-APPROACH_HEIGHT = 0.15  # meters above the table for pre-grasp/pre-place poses
-SETTLE_STEPS = 300       # physics steps per motion segment (PD converges + settles)
-GRASP_STEPS = 200        # extra steps to let the gripper actually close/grip
+APPROACH_HEIGHT = 0.15   # meters above the grasp height for pre-grasp/pre-place/transport
+N_WAYPOINTS = 12         # sub-waypoints per motion segment, keeps the Cartesian path near-linear
+STEPS_PER_WAYPOINT = 60  # physics steps per sub-waypoint (PD convergence + settle)
+GRASP_STEPS = 300        # steps to let the gripper actually close/open
 
 
 def make_downward_R(yaw_rad: float) -> np.ndarray:
     """World-frame rotation: gripper's approach axis points straight down
-    (-world Z), rotated about world Z by yaw_rad — this is the "grasp
-    angle" computed from the mask's minAreaRect."""
+    (-world Z), rotated about world Z by yaw_rad — the grasp angle from the
+    mask's minAreaRect."""
     Rx180 = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]], dtype=float)
     c, s = np.cos(yaw_rad), np.sin(yaw_rad)
     Rz = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]], dtype=float)
     return Rz @ Rx180
 
 
-def _goto(model, data, hand_id, arm_addrs, arm_actuator_ids, target_pos, target_R, steps=SETTLE_STEPS):
-    ok = solve_ik(model, data, hand_id, arm_addrs, target_pos, target_R)
-    target_qpos = [data.qpos[a] for a in arm_addrs]
-    for _ in range(steps):
-        for act_id, q in zip(arm_actuator_ids, target_qpos):
-            data.ctrl[act_id] = q
-        mujoco.mj_step(model, data)
-    return ok
+def set_home_pose(model, data, arm_addrs):
+    """Initializes the arm+gripper to a sane starting configuration above
+    the table. Sets qpos directly rather than using mj_resetDataKeyframe,
+    since the Menagerie keyframe only defines the arm's 9 DOFs and would
+    zero out every object's free-joint qpos too (a real bug hit and fixed
+    during development of this project)."""
+    home_arm_qpos = [0, 0, 0, -1.57079, 0, 1.57079, -0.7853]
+    for addr, val in zip(arm_addrs, home_arm_qpos):
+        data.qpos[addr] = val
+    for jname in ("finger_joint1", "finger_joint2"):
+        jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, jname)
+        data.qpos[model.jnt_qposadr[jid]] = 0.04
+    mujoco.mj_forward(model, data)
+    return home_arm_qpos
+
+
+def _goto_linear(model, data, hand_id, arm_addrs, arm_actuator_ids, target_pos, target_R,
+                  n_wp=N_WAYPOINTS, steps_per_wp=STEPS_PER_WAYPOINT):
+    tcp, _ = get_tcp_pose(model, data, hand_id)
+    for a in np.linspace(0, 1, n_wp + 1)[1:]:
+        wp = tcp * (1 - a) + np.asarray(target_pos) * a
+        solve_ik(model, data, hand_id, arm_addrs, wp, target_R, max_iters=150)
+        target_qpos = [data.qpos[k] for k in arm_addrs]
+        for _ in range(steps_per_wp):
+            for act_id, q in zip(arm_actuator_ids, target_qpos):
+                data.ctrl[act_id] = q
+            mujoco.mj_step(model, data)
 
 
 def _set_gripper(model, data, gripper_actuator_id, ctrl_value, steps=GRASP_STEPS):
@@ -49,60 +80,86 @@ def _set_gripper(model, data, gripper_actuator_id, ctrl_value, steps=GRASP_STEPS
         mujoco.mj_step(model, data)
 
 
-def run_pick_and_place(model, data, pick_pos, place_pos, grasp_yaw,
+def _activate_weld(model, data, eq_id, hand_id, obj_body_id):
+    """Locks the weld to the object's CURRENT relative pose w.r.t. the hand
+    (not the compile-time default, which would snap the object back to
+    wherever it started relative to the gripper)."""
+    hand_pos = data.xpos[hand_id].copy()
+    hand_quat = data.xquat[hand_id].copy()
+    obj_pos = data.xpos[obj_body_id].copy()
+    obj_quat = data.xquat[obj_body_id].copy()
+
+    hand_mat = np.zeros(9)
+    mujoco.mju_quat2Mat(hand_mat, hand_quat)
+    hand_mat = hand_mat.reshape(3, 3)
+    rel_pos = hand_mat.T @ (obj_pos - hand_pos)
+
+    hand_quat_neg = np.zeros(4)
+    mujoco.mju_negQuat(hand_quat_neg, hand_quat)
+    rel_quat = np.zeros(4)
+    mujoco.mju_mulQuat(rel_quat, hand_quat_neg, obj_quat)
+
+    model.eq_data[eq_id, 3:6] = rel_pos
+    model.eq_data[eq_id, 6:10] = rel_quat
+    data.eq_active[eq_id] = 1
+
+
+def _deactivate_weld(data, eq_id):
+    data.eq_active[eq_id] = 0
+
+
+def run_pick_and_place(model, data, object_name: str, pick_xy, place_xy, grasp_yaw,
                         grasp_height, frame_callback=None):
     """
-    pick_pos, place_pos: (x, y) tuples — Z is derived from grasp_height /
-    APPROACH_HEIGHT internally.
-    grasp_height: world Z of the object's grasp point (its vertical
-    center — where the gripper should close around it).
-    frame_callback: optional fn() called after every physics step, used to
-    record video frames during the motion (keeps this module independent
-    of any video-writing code).
+    object_name: one of 'obj_square', 'obj_circle', 'obj_triangle' — used to
+    look up the matching weld constraint ('weld_square' etc.) by name.
+    pick_xy, place_xy: (x, y) world tuples. grasp_height: world Z of the
+    object's vertical center (where the gripper closes around it).
+    frame_callback: optional fn() called after each physics step, for
+    recording video frames without coupling this module to any video code.
     """
     hand_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "hand")
+    obj_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, object_name)
+    weld_name = "weld_" + object_name.split("_", 1)[1]
+    eq_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_EQUALITY, weld_name)
+
     arm_addrs = get_arm_qpos_addrs(model)
     arm_actuator_ids = [mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, f"actuator{i}")
                         for i in range(1, 8)]
     gripper_actuator_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "actuator8")
 
     R = make_downward_R(grasp_yaw)
-    px, py = pick_pos
-    lx, ly = place_pos
+    px, py = pick_xy
+    lx, ly = place_xy
 
-    def step_with_callback(steps):
-        if frame_callback is None:
-            return
-        for _ in range(steps):
+    def goto(target_pos, **kwargs):
+        _goto_linear(model, data, hand_id, arm_addrs, arm_actuator_ids, target_pos, R, **kwargs)
+        if frame_callback:
             frame_callback()
 
     # 1. Pre-grasp: above the object, gripper open.
     _set_gripper(model, data, gripper_actuator_id, GRIPPER_OPEN_CTRL, steps=1)
-    _goto(model, data, hand_id, arm_addrs, arm_actuator_ids,
-          np.array([px, py, grasp_height + APPROACH_HEIGHT]), R)
+    goto([px, py, grasp_height + APPROACH_HEIGHT])
 
     # 2. Descend to grasp height.
-    _goto(model, data, hand_id, arm_addrs, arm_actuator_ids,
-          np.array([px, py, grasp_height]), R)
+    goto([px, py, grasp_height])
 
-    # 3. Close gripper.
+    # 3. Close gripper, then lock the weld at the pose it actually grasped at.
     _set_gripper(model, data, gripper_actuator_id, GRIPPER_CLOSED_CTRL)
+    _activate_weld(model, data, eq_id, hand_id, obj_body_id)
 
     # 4. Lift.
-    _goto(model, data, hand_id, arm_addrs, arm_actuator_ids,
-          np.array([px, py, grasp_height + APPROACH_HEIGHT]), R)
+    goto([px, py, grasp_height + APPROACH_HEIGHT])
 
     # 5. Transport (stay high) to above the target bin.
-    _goto(model, data, hand_id, arm_addrs, arm_actuator_ids,
-          np.array([lx, ly, grasp_height + APPROACH_HEIGHT]), R)
+    goto([lx, ly, grasp_height + APPROACH_HEIGHT])
 
     # 6. Descend to release height.
-    _goto(model, data, hand_id, arm_addrs, arm_actuator_ids,
-          np.array([lx, ly, grasp_height]), R)
+    goto([lx, ly, grasp_height])
 
-    # 7. Open gripper to release.
+    # 7. Release: drop the weld, then open the gripper.
+    _deactivate_weld(data, eq_id)
     _set_gripper(model, data, gripper_actuator_id, GRIPPER_OPEN_CTRL)
 
     # 8. Retract.
-    _goto(model, data, hand_id, arm_addrs, arm_actuator_ids,
-          np.array([lx, ly, grasp_height + APPROACH_HEIGHT]), R)
+    goto([lx, ly, grasp_height + APPROACH_HEIGHT])
