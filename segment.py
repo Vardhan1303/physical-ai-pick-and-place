@@ -47,11 +47,17 @@ import cv2
 import onnxruntime as ort
 
 # ---------------------------------------------------------------------------
-# Locate the FLIP repo + weights relative to this script.
+# Locate the FLIP repo + weights.
+# Defaults to FLIP-main/ next to this script, but can point anywhere via the
+# FLIP_WEIGHTS_DIR environment variable — used here to reuse the weights
+# already downloaded in the original Iphoreos project instead of duplicating
+# ~gigabytes of ONNX files into this repo too.
 # ---------------------------------------------------------------------------
+import os
+
 BASE_DIR = Path(__file__).resolve().parent
 FLIP_DIR = BASE_DIR / "FLIP-main"
-WEIGHTS_DIR = FLIP_DIR / "model" / "weights"
+WEIGHTS_DIR = Path(os.environ.get("FLIP_WEIGHTS_DIR", str(FLIP_DIR / "model" / "weights")))
 
 try:
     import flip_position  # compiled C extension (built via FLIP-main/ext/setup.py)
