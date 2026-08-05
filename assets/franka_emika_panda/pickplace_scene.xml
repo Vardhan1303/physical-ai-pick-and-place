@@ -39,6 +39,7 @@
     <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
 
     <camera name="top_down" pos="0.5 0 1.0" xyaxes="1 0 0 0 1 0"/>
+    <camera name="demo_view" pos="0.05 -1.1 0.9" xyaxes="0.99 0.13 0 -0.06 0.44 0.90"/>
 
     <geom name="table" type="box" pos="0.5 0 0.2" size="0.3 0.35 0.2" material="table_mat"/>
 
