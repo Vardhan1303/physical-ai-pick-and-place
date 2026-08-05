@@ -48,13 +48,13 @@
 
     <body name="obj_square" pos="0.4 -0.2 0.4">
       <freejoint/>
-      <geom name="obj_square_geom" type="box" pos="0 0 0.02" size="0.02 0.02 0.02" material="square_mat" mass="0.05"/>
+      <geom name="obj_square_geom" type="box" pos="0 0 0.02" size="0.02 0.02 0.02" material="square_mat" mass="0.05" friction="1.5 0.5 0.5"/>
       <geom name="obj_square_marker" type="box" pos="0 0 0.0405" size="0.011 0.011 0.0005" material="marker_square_mat" contype="0" conaffinity="0"/>
     </body>
 
     <body name="obj_circle" pos="0.4 0 0.4">
       <freejoint/>
-      <geom name="obj_circle_geom" type="cylinder" pos="0 0 0.02" size="0.02 0.02" material="circle_mat" mass="0.05"/>
+      <geom name="obj_circle_geom" type="cylinder" pos="0 0 0.02" size="0.02 0.02" material="circle_mat" mass="0.05" friction="1.5 0.5 0.5"/>
       <geom name="obj_circle_marker" type="box" pos="0 0 0.0405" size="0.011 0.011 0.0005" material="marker_circle_mat" contype="0" conaffinity="0"/>
     </body>
 
