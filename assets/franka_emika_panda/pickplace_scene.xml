@@ -64,4 +64,17 @@
       <geom name="obj_triangle_marker" type="box" pos="0 0 0.0405" size="0.011 0.011 0.0005" material="marker_triangle_mat" contype="0" conaffinity="0"/>
     </body>
   </worldbody>
+
+  <!-- Weld constraints, inactive by default, toggled on/off at runtime the
+       moment the gripper closes/opens (see manipulation.py). Pure friction
+       grip in MuJoCo for small parallel-jaw grasps under lateral motion
+       proved unreliable (verified through extensive testing); the weld
+       guarantees the object travels with the gripper once grasped, while
+       the fingers still physically close around it for a real-looking
+       contact at pick/place. -->
+  <equality>
+    <weld name="weld_square" body1="hand" body2="obj_square" active="false"/>
+    <weld name="weld_circle" body1="hand" body2="obj_circle" active="false"/>
+    <weld name="weld_triangle" body1="hand" body2="obj_triangle" active="false"/>
+  </equality>
 </mujoco>
