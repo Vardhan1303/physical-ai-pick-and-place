@@ -273,8 +273,13 @@
       ctrlrange="-0.0175 3.7525"/>
     <general class="panda" name="actuator7" joint="joint7" gainprm="2000" biasprm="0 -2000 -200" forcerange="-12 12"/>
     <!-- Remap original ctrlrange (0, 0.04) to (0, 255): 0.04 * 100 / 255 = 0.01568627451 -->
+    <!-- Stiffness/damping raised 10x/6x from the Menagerie default (-100/-10 -> -1000/-60):
+         the default gains assume a compliant real gripper; against a rigid contact-limited
+         object in sim they only produce ~1N of steady grip force at the equilibrium gap,
+         nowhere near enough friction to hold even a light 50g object during a lift. This is
+         an Iphoreos/physical-ai-pick-and-place-specific tuning change, not a Menagerie bug. -->
     <general class="panda" name="actuator8" tendon="split" forcerange="-100 100" ctrlrange="0 255"
-      gainprm="0.01568627451 0 0" biasprm="0 -100 -10"/>
+      gainprm="0.01568627451 0 0" biasprm="0 -1000 -60"/>
   </actuator>
 
   <keyframe>
