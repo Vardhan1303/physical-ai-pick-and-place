@@ -83,26 +83,45 @@ def unproject_pixel_to_table(model, data, cam_name: str, px: float, py: float,
     with the horizontal plane z = table_z, using the fixed-height
     assumption (no depth camera needed): we know objects sit on a table at
     a known height, so this alone is enough to recover 3D X/Y.
+
+    Handles both perspective and orthographic cameras (model.cam_projection:
+    0=perspective, 1=orthographic — confirmed empirically, not documented
+    plainly). For an orthographic camera, cam_fovy is the FULL vertical
+    extent of the view volume in world length units (not degrees, and not
+    a half-extent) — also confirmed empirically by rendering known marker
+    positions and solving for the pixel<->world mapping, since MuJoCo's own
+    docs are easy to misread here. Every ray is parallel to the camera's
+    view axis (no convergence at the camera position like perspective), so
+    the pixel offset shifts the ray's ORIGIN rather than its direction.
     """
     cam_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, cam_name)
     cam_pos = data.cam_xpos[cam_id].copy()
     cam_mat = data.cam_xmat[cam_id].reshape(3, 3)  # columns = camera's local x,y,z axes in world frame
+    cam_right, cam_up, cam_back = cam_mat[:, 0], cam_mat[:, 1], cam_mat[:, 2]
+    forward_dir = -cam_back  # camera looks down its local -z
 
-    fovy_deg = model.cam_fovy[cam_id]
-    tan_half_fovy = np.tan(np.deg2rad(fovy_deg) / 2)
     aspect = img_width / img_height
-    tan_half_fovx = tan_half_fovy * aspect
-
     ndc_x = (2 * px / img_width) - 1
     ndc_y = 1 - (2 * py / img_height)
 
-    local_dir = np.array([ndc_x * tan_half_fovx, ndc_y * tan_half_fovy, -1.0])
-    world_dir = cam_mat @ local_dir
-    world_dir /= np.linalg.norm(world_dir)
+    is_orthographic = int(model.cam_projection[cam_id]) == 1
+
+    if is_orthographic:
+        half_h = model.cam_fovy[cam_id] / 2.0
+        half_w = half_h * aspect
+        ray_origin = cam_pos + ndc_x * half_w * cam_right + ndc_y * half_h * cam_up
+        world_dir = forward_dir
+    else:
+        tan_half_fovy = np.tan(np.deg2rad(model.cam_fovy[cam_id]) / 2)
+        tan_half_fovx = tan_half_fovy * aspect
+        local_dir = np.array([ndc_x * tan_half_fovx, ndc_y * tan_half_fovy, -1.0])
+        world_dir = cam_mat @ local_dir
+        world_dir /= np.linalg.norm(world_dir)
+        ray_origin = cam_pos
 
     if abs(world_dir[2]) < 1e-8:
         return None  # ray parallel to table plane, shouldn't happen for a top-down camera
 
-    t = (table_z - cam_pos[2]) / world_dir[2]
-    world_point = cam_pos + t * world_dir
+    t = (table_z - ray_origin[2]) / world_dir[2]
+    world_point = ray_origin + t * world_dir
     return world_point
