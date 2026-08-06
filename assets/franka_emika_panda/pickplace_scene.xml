@@ -4,7 +4,7 @@
   <visual>
     <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
     <rgba haze="0.15 0.25 0.35 1"/>
-    <global azimuth="120" elevation="-20"/>
+    <global azimuth="120" elevation="-20" offwidth="1280" offheight="960"/>
   </visual>
 
   <asset>
@@ -31,7 +31,7 @@
     <texture type="2d" name="marker_triangle_tex" file="custom/marker_triangle.png"/>
     <material name="marker_triangle_mat" texture="marker_triangle_tex" specular="0" shininess="0"/>
 
-    <mesh name="triangular_prism" file="custom/triangular_prism.obj"/>
+    <mesh name="triangular_prism" file="custom/triangular_prism.obj" scale="2 2 2"/>
   </asset>
 
   <worldbody>
@@ -43,7 +43,7 @@
     <light pos="0 0 1.5" dir="0 0 -1" directional="true" castshadow="false"/>
     <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
 
-    <camera name="top_down" pos="0.5 0 1.0" xyaxes="1 0 0 0 1 0"/>
+    <camera name="top_down" pos="0.5 0 1.3" xyaxes="1 0 0 0 1 0"/>
     <camera name="demo_view" pos="1.5 -1.1 1.15" xyaxes="0.7399 0.6727 0 -0.2866 0.3152 0.9047"/>
 
     <geom name="table" type="box" pos="0.5 0 0.2" size="0.3 0.35 0.2" material="table_mat"/>
@@ -54,20 +54,20 @@
 
     <body name="obj_square" pos="0.4 -0.2 0.4">
       <freejoint/>
-      <geom name="obj_square_geom" type="box" pos="0 0 0.02" size="0.02 0.02 0.02" material="square_mat" mass="0.05" friction="3.0 1.0 1.0" condim="4" solimp="0.95 0.99 0.001" solref="0.005 1"/>
-      <geom name="obj_square_marker" type="box" pos="0 0 0.0405" size="0.011 0.011 0.0005" material="marker_square_mat" contype="0" conaffinity="0"/>
+      <geom name="obj_square_geom" type="box" pos="0 0 0.04" size="0.04 0.04 0.04" material="square_mat" mass="0.05" friction="3.0 1.0 1.0" condim="4" solimp="0.95 0.99 0.001" solref="0.005 1"/>
+      <geom name="obj_square_marker" type="box" pos="0 0 0.0805" size="0.011 0.011 0.0005" material="marker_square_mat" contype="0" conaffinity="0"/>
     </body>
 
     <body name="obj_circle" pos="0.4 0 0.4">
       <freejoint/>
-      <geom name="obj_circle_geom" type="cylinder" pos="0 0 0.02" size="0.02 0.02" material="circle_mat" mass="0.05" friction="3.0 1.0 1.0" condim="4" solimp="0.95 0.99 0.001" solref="0.005 1"/>
-      <geom name="obj_circle_marker" type="box" pos="0 0 0.0405" size="0.011 0.011 0.0005" material="marker_circle_mat" contype="0" conaffinity="0"/>
+      <geom name="obj_circle_geom" type="cylinder" pos="0 0 0.04" size="0.04 0.04" material="circle_mat" mass="0.05" friction="3.0 1.0 1.0" condim="4" solimp="0.95 0.99 0.001" solref="0.005 1"/>
+      <geom name="obj_circle_marker" type="box" pos="0 0 0.0805" size="0.011 0.011 0.0005" material="marker_circle_mat" contype="0" conaffinity="0"/>
     </body>
 
     <body name="obj_triangle" pos="0.4 0.2 0.4">
       <freejoint/>
       <geom name="obj_triangle_geom" type="mesh" mesh="triangular_prism" material="triangle_mat" mass="0.05" friction="3.0 1.0 1.0" condim="4" solimp="0.95 0.99 0.001" solref="0.005 1"/>
-      <geom name="obj_triangle_marker" type="box" pos="0 0 0.0405" size="0.011 0.011 0.0005" material="marker_triangle_mat" contype="0" conaffinity="0"/>
+      <geom name="obj_triangle_marker" type="box" pos="0 0 0.0805" size="0.011 0.011 0.0005" material="marker_triangle_mat" contype="0" conaffinity="0"/>
     </body>
   </worldbody>
 

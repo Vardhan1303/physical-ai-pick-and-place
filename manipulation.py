@@ -24,7 +24,7 @@ close around the object for a real contact at pick/place; only the
 import numpy as np
 import mujoco
 
-from ik_utils import solve_ik, get_tcp_pose, get_arm_qpos_addrs
+from ik_utils import solve_ik, get_tcp_pose, get_arm_qpos_addrs, mat2quat, quat2mat, slerp
 
 GRIPPER_OPEN_CTRL = 255.0
 GRIPPER_CLOSED_CTRL = 0.0
@@ -50,7 +50,17 @@ def set_home_pose(model, data, arm_addrs):
     the table. Sets qpos directly rather than using mj_resetDataKeyframe,
     since the Menagerie keyframe only defines the arm's 9 DOFs and would
     zero out every object's free-joint qpos too (a real bug hit and fixed
-    during development of this project)."""
+    during development of this project).
+
+    Also sets data.ctrl to match: the arm's actuators are PD position
+    servos, so if a caller steps physics afterward (e.g. to let free-jointed
+    objects settle onto the table before perception) without first setting
+    ctrl, the controllers see ctrl=0 and drag every joint toward zero,
+    silently undoing this whole function before the first real motion even
+    starts. This was a real bug — the arm drifted from x=0.55 to x=0.13
+    during a 500-step settle loop, and every reported "IK failure"
+    downstream of it was actually IK correctly targeting the goal from that
+    already-wrong starting configuration."""
     home_arm_qpos = [0, 0, 0, -1.57079, 0, 1.57079, -0.7853]
     for addr, val in zip(arm_addrs, home_arm_qpos):
         data.qpos[addr] = val
@@ -58,15 +68,58 @@ def set_home_pose(model, data, arm_addrs):
         jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, jname)
         data.qpos[model.jnt_qposadr[jid]] = 0.04
     mujoco.mj_forward(model, data)
+
+    for i, val in enumerate(home_arm_qpos):
+        act_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, f"actuator{i + 1}")
+        data.ctrl[act_id] = val
+    gripper_act_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "actuator8")
+    data.ctrl[gripper_act_id] = GRIPPER_OPEN_CTRL
+
     return home_arm_qpos
+
+
+# The Panda's home/ready pose reaches directly over the table center, which
+# happens to sit right above the circle object's marker — occluding it from
+# the overhead camera used for perception (found by direct testing: with
+# set_home_pose's ctrl fix applied, the arm actually holds that position
+# instead of drifting, and the circle marker vanished from detection). Park
+# the arm off to the side of the table before running perception, then let
+# the first pick-and-place motion move it from there.
+PARK_QPOS = [-2.6, -1.2, 0, -2.8, 0, 1.6, 0.8]
+
+
+def set_park_pose(model, data, arm_addrs):
+    """Same idea as set_home_pose (sets qpos AND holds it via ctrl so a
+    settle loop doesn't drag the arm away from it), but swung off to the
+    side so it doesn't block the overhead camera's view of the table."""
+    for addr, val in zip(arm_addrs, PARK_QPOS):
+        data.qpos[addr] = val
+    for jname in ("finger_joint1", "finger_joint2"):
+        jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, jname)
+        data.qpos[model.jnt_qposadr[jid]] = 0.04
+    mujoco.mj_forward(model, data)
+
+    for i, val in enumerate(PARK_QPOS):
+        act_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, f"actuator{i + 1}")
+        data.ctrl[act_id] = val
+    gripper_act_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "actuator8")
+    data.ctrl[gripper_act_id] = GRIPPER_OPEN_CTRL
+
+    return PARK_QPOS
 
 
 def _goto_linear(model, data, hand_id, arm_addrs, arm_actuator_ids, target_pos, target_R,
                   n_wp=N_WAYPOINTS, steps_per_wp=STEPS_PER_WAYPOINT, frame_callback=None):
-    tcp, _ = get_tcp_pose(model, data, hand_id)
+    tcp, start_R = get_tcp_pose(model, data, hand_id)
+    start_quat = mat2quat(start_R)
+    target_quat = mat2quat(target_R)
     for a in np.linspace(0, 1, n_wp + 1)[1:]:
         wp = tcp * (1 - a) + np.asarray(target_pos) * a
-        solve_ik(model, data, hand_id, arm_addrs, wp, target_R, max_iters=150)
+        # Orientation is slerped too (not jumped straight to target_R) — a
+        # large single-shot orientation change can send the damped IK solver
+        # into a bad configuration on the very first step; see ik_utils.slerp.
+        wp_R = quat2mat(slerp(start_quat, target_quat, a))
+        solve_ik(model, data, hand_id, arm_addrs, wp, wp_R, max_iters=150)
         target_qpos = [data.qpos[k] for k in arm_addrs]
         for _ in range(steps_per_wp):
             for act_id, q in zip(arm_actuator_ids, target_qpos):

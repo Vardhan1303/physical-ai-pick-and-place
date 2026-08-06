@@ -82,7 +82,7 @@ def main():
     for _ in range(SETTLE_STEPS):
         mujoco.mj_step(model, data)
 
-    renderer = mujoco.Renderer(model, height=480, width=640)
+    renderer = mujoco.Renderer(model, height=720, width=960)
     renderer.update_scene(data, camera=CAMERA_NAME)
     frame_rgb = renderer.render()
     frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)

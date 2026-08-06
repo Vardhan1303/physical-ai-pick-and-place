@@ -81,3 +81,40 @@ def solve_ik(model, data, hand_body_id, arm_qpos_addrs, target_pos, target_rotma
 def get_arm_qpos_addrs(model):
     return [model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, n)]
             for n in ARM_JOINT_NAMES]
+
+
+def mat2quat(mat: np.ndarray) -> np.ndarray:
+    quat = np.zeros(4)
+    mujoco.mju_mat2Quat(quat, mat.flatten())
+    return quat
+
+
+def quat2mat(quat: np.ndarray) -> np.ndarray:
+    mat = np.zeros(9)
+    mujoco.mju_quat2Mat(mat, quat)
+    return mat.reshape(3, 3)
+
+
+def slerp(q0: np.ndarray, q1: np.ndarray, t: float) -> np.ndarray:
+    """Quaternion spherical linear interpolation. Used to smoothly interpolate
+    the gripper's target ORIENTATION across waypoints, not just its position
+    — without this, a large single-shot orientation change (e.g. a grasp yaw
+    far from the arm's current wrist angle) can send the damped-least-squares
+    IK solver into a bad/degenerate configuration on the very first step
+    (observed directly: yaw=-90deg from the home pose converged to the hand
+    dropping to floor level instead of the intended pregrasp height)."""
+    q0 = q0 / np.linalg.norm(q0)
+    q1 = q1 / np.linalg.norm(q1)
+    dot = np.dot(q0, q1)
+    if dot < 0:
+        q1 = -q1
+        dot = -dot
+    dot = np.clip(dot, -1.0, 1.0)
+    if dot > 0.9995:
+        result = q0 + t * (q1 - q0)
+        return result / np.linalg.norm(result)
+    theta_0 = np.arccos(dot)
+    theta = theta_0 * t
+    q2 = q1 - q0 * dot
+    q2 = q2 / np.linalg.norm(q2)
+    return q0 * np.cos(theta) + q2 * np.sin(theta)
