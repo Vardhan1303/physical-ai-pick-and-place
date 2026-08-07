@@ -43,7 +43,7 @@ macros.IMAGE_CONVENTION = "opencv"
 
 from environment import PickPlaceEnv, SIDE_CAMERA_NAME, TARGET_MARKER_ID
 from aruco_prompt import get_target_prompt, draw_debug_overlay, estimate_marker_pose
-from flip_segmenter import FlipTargetSegmenter
+from flip_segmenter import FlipTargetSegmenter, ROI_TALL_OBJECT_MIN_HALF_PX
 from geometry import (
     build_target_point_cloud, get_robot_base_transform,
     camera_to_world, world_to_robot_base,
@@ -121,7 +121,7 @@ def run_side_grasp_pipeline(
     run_dir=None,
     model_size="small",
     seed=0,
-    max_steps_per_move=250,
+    max_steps_per_move=400,
     record_video=True,
 ):
     if run_dir is None:
@@ -196,6 +196,12 @@ def run_side_grasp_pipeline(
         seg = segmenter.segment_from_prompt(
             rgb, detection.center_px, marker_side_px=detection.side_length_px,
             debug_dir=run_dir, debug_tag="03_flip",
+            # Larger ROI floor than the top-down pipeline's default: the
+            # marker sits near the object's BASE (see environment.py's
+            # _add_aruco_decal), so the ROI must reach well above the
+            # marker to see a bottle-tall object's full extent — see
+            # flip_segmenter.py's ROI_TALL_OBJECT_MIN_HALF_PX comment.
+            min_half_px=ROI_TALL_OBJECT_MIN_HALF_PX,
         )
         timings["flip_segmenter"] = time.time() - t0
         n_fg = int((seg.mask_full > 0).sum())

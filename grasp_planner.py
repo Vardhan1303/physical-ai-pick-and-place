@@ -260,7 +260,7 @@ def plan_side_grasp(
     safe_height_above_table: float = 0.20,
     approach_standoff: float = 0.12,
     retreat_distance: float = 0.10,
-    lift_height: float = 0.15,
+    lift_height: float = 0.08,
     width_safety_margin: float = 0.01,
     place_height: Optional[float] = None,
     height_fraction: float = 0.7,
@@ -343,6 +343,21 @@ def plan_side_grasp(
     z = points_robot[:, 2]
     z_min, z_max = float(np.percentile(z, 2)), float(np.percentile(z, 98))
     grasp_z = z_min + height_fraction * (z_max - z_min)
+    # Explicit reachability floor, ON TOP OF height_fraction (not instead
+    # of it): the visible cloud's OWN z-range can itself be truncated low
+    # (FLIP's ROI is sized around the marker's position, so if the marker
+    # sits low on the object, the segmented/visible region — and therefore
+    # z_max — may not extend anywhere near the object's true top either).
+    # height_fraction alone can't fix that; it can only bias within
+    # whatever range the perception stack actually handed it. Confirmed
+    # in-sandbox that this arm needs roughly 0.14m of clearance above the
+    # table to hold a horizontal wrist orientation reliably (the same
+    # sweep referenced in height_fraction's comment above) — so raise
+    # grasp_z to at least that floor, but never above z_max (don't grasp
+    # above the visible object).
+    if table_height is not None:
+        min_reachable_z = table_height + 0.17
+        grasp_z = min(max(grasp_z, min_reachable_z), z_max)
     if table_height is not None and grasp_z < table_height + 0.005:
         return None, GraspFailure(
             "degenerate_grasp_height",

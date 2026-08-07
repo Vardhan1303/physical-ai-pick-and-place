@@ -44,6 +44,16 @@ os.environ.setdefault("FLIP_WEIGHTS_DIR", r"V:\projects\Iphoreos\FLIP-main\model
 from segment import FlipSegmenter as _RawFlipSegmenter  # noqa: E402  (env var must be set first)
 
 ROI_MIN_HALF_PX = 45
+# Raised from an earlier value tuned only for a short, roughly cube-shaped
+# object. For a bottle-like object with its marker anchored near the base
+# (environment.py::_add_aruco_decal — a fixed height above the base, not
+# the object's vertical center, for reasons documented there), the ROI
+# needs to extend well above the marker to reach the object's actual top,
+# not just scale with the marker's own (possibly small) pixel size.
+# Confirmed necessary in-sandbox: at the old ROI sizing, FLIP's mask
+# covered only ~36px right around the marker on a tall cylinder, versus
+# thousands of px once the ROI was large enough to see the whole object.
+ROI_TALL_OBJECT_MIN_HALF_PX = 120
 ROI_SCALE = 2.3          # ROI half-size = max(ROI_MIN_HALF_PX, marker_side_px * ROI_SCALE)
 ROI_RESIZE = 256          # ROI is resized to this square before FLIP, matching segment.py's default
 DEFAULT_SIGMA = 0.35
@@ -73,11 +83,12 @@ class FlipTargetSegmenter:
         cleanup: bool = True,
         debug_dir: Optional[str] = None,
         debug_tag: str = "flip",
+        min_half_px: float = ROI_MIN_HALF_PX,
     ) -> SegmentationResult:
         h, w = rgb_full.shape[:2]
         cx, cy = prompt_px
 
-        half = ROI_MIN_HALF_PX if marker_side_px is None else max(ROI_MIN_HALF_PX, marker_side_px * ROI_SCALE)
+        half = min_half_px if marker_side_px is None else max(min_half_px, marker_side_px * ROI_SCALE)
         x0 = int(np.clip(cx - half, 0, w - 1))
         x1 = int(np.clip(cx + half, 0, w))
         y0 = int(np.clip(cy - half, 0, h - 1))

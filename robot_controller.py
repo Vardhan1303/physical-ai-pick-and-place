@@ -412,7 +412,14 @@ def execute_side_grasp_plan(env, plan, base_pos: np.ndarray, base_mat: np.ndarra
 
     post_grasp_stages = [
         ("retreat", plan.retreat, GRIPPER_CLOSE, False, False),
-        ("lift", plan.lift, GRIPPER_CLOSE, False, False),
+        # stop_on_stall=True here too: lifting while holding an object in
+        # a horizontal-wrist grasp can run the arm up against a joint
+        # limit before the full planned lift_height is reached — confirmed
+        # in-sandbox (position barely changed step-over-step even with a
+        # generous step budget, the same "stopped moving, error not
+        # shrinking" signature move_to_pose's stall detection is built
+        # for, not a slow-convergence case more steps would fix).
+        ("lift", plan.lift, GRIPPER_CLOSE, True, False),
         ("transport_to_place", plan.transport, GRIPPER_CLOSE, False, True),
         ("descend_to_place", plan.place_descend, GRIPPER_CLOSE, True, False),
     ]

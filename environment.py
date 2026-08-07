@@ -214,7 +214,7 @@ class PickPlaceEnv(ManipulationEnv):
     # ArUco naturally found nothing). Pulling the camera out to 1.3 clears
     # the robot's body while keeping the same azimuth.
     _CAM_AZIMUTH_DEG = 155
-    _CAM_HORIZ_DIST = 0.9
+    _CAM_HORIZ_DIST = 0.7
     _CAMERA_XY_OFFSET = np.array([
         _CAM_HORIZ_DIST * np.cos(np.radians(_CAM_AZIMUTH_DEG)),
         _CAM_HORIZ_DIST * np.sin(np.radians(_CAM_AZIMUTH_DEG)),
@@ -230,7 +230,7 @@ class PickPlaceEnv(ManipulationEnv):
         table_full_size=(0.8, 0.8, 0.05),
         table_friction=(1.0, 5e-3, 1e-4),
         num_distractors=0,
-        target_object_size=(0.025, 0.10),
+        target_object_size=(0.025, 0.09),
         randomize_object_rotation=False,
         use_camera_obs=True,
         has_renderer=False,
@@ -501,7 +501,7 @@ class PickPlaceEnv(ManipulationEnv):
         # on the original, shorter object) keeps the viewing geometry
         # constant regardless of object height. Clamped to stay within the
         # object's own vertical extent for very short future objects.
-        target_height_above_base = 0.045
+        target_height_above_base = half_length
         height_above_base = float(np.clip(target_height_above_base, decal_half + 0.005, 2 * half_length - decal_half - 0.005))
         decal_local_z = height_above_base - half_length
         decal_pos = [decal_r * np.cos(azimuth), decal_r * np.sin(azimuth), decal_local_z]
