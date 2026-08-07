@@ -292,12 +292,26 @@ class MultiObjectPickPlaceEnv(PickPlaceEnv):
                                       rgba=rgba, material=material, rng=self.rng)
                 self._add_cylinder_decal(obj, marker_id, camera_azimuth)
             elif shape == "box":
-                hx, hy, hz = 0.035 * scale, 0.035 * scale, 0.05 * scale
+                # hz raised from an earlier 0.05 (10cm-tall box): confirmed
+                # in-sandbox that a box that short left grasp_planner's
+                # z_max (the visible cloud's own top) below the arm's
+                # ~0.14-0.17m-above-table horizontal-approach clearance
+                # floor (see grasp_planner.py::plan_side_grasp's
+                # height_fraction/min_reachable_z comments — the SAME
+                # physical constraint that made the Phase-1 cylinder
+                # "bottle-like" instead of short). Raised to match.
+                hx, hy, hz = 0.035 * scale, 0.035 * scale, 0.09 * scale
                 obj = BoxObject(name="obj_box", size=(hx, hy, hz),
                                  rgba=rgba, material=material, rng=self.rng)
                 self._add_box_decal(obj, marker_id, camera_azimuth)
             elif shape == "prism":
-                circumradius, half_height = 0.05 * scale, 0.06 * scale
+                # circumradius reduced from an earlier 0.05: that gave a
+                # front-face width (2 * 0.5*R*sqrt(3) ~= 0.087m) wider than
+                # the Panda gripper's 0.08m max opening even before the
+                # width-safety margin — confirmed in-sandbox
+                # (grasp_planner rejected it as object_too_wide). half_height
+                # raised for the same table-clearance reason as the box.
+                circumradius, half_height = 0.038 * scale, 0.09 * scale
                 obj = PrismObject(name="obj_prism", circumradius=circumradius, half_height=half_height,
                                    front_azimuth=camera_azimuth, rgba=rgba, material=material)
                 self._add_prism_decal(obj, marker_id)
