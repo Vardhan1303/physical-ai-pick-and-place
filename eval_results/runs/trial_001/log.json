@@ -17,47 +17,47 @@
   {
     "stage": "flip_segmenter",
     "ok": true,
-    "detail": "mask_px=4508 confidence=0.965 roi_bbox=(511, 333, 607, 429)"
+    "detail": "mask_px=4469 confidence=0.959 roi_bbox=(511, 333, 607, 429)"
   },
   {
     "stage": "geometry",
     "ok": true,
-    "detail": "n_raw=4508 n_valid_depth=4508 n_final=1272 table_plane_found=True"
+    "detail": "n_raw=4469 n_valid_depth=4469 n_final=896 table_plane_found=True"
   },
   {
     "stage": "grasp_planner",
     "ok": true,
-    "detail": "grasp_width=0.0474m yaw=-4.2deg grasp_pos=[ 0.60235631 -0.04376706 -0.04979846]"
+    "detail": "grasp_width=0.0178m yaw=26.6deg grasp_pos=[ 0.58532548 -0.06516069 -0.04963666]"
   },
   {
     "stage": "robot_controller:pregrasp",
     "ok": true,
-    "detail": "steps=7 pos_err=0.0040 rot_err=0.0030"
+    "detail": "steps=7 pos_err=0.0035 rot_err=0.0166"
   },
   {
     "stage": "robot_controller:descend_to_grasp",
     "ok": true,
-    "detail": "steps=30 pos_err=0.0096 rot_err=0.0012 [stopped_by_contact]"
+    "detail": "steps=15 pos_err=0.0060 rot_err=0.0078"
   },
   {
     "stage": "robot_controller:close_gripper",
     "ok": true,
-    "detail": "steps=19 pos_err=0.0000 rot_err=0.0000"
+    "detail": "steps=100 pos_err=0.0000 rot_err=0.0000"
   },
   {
     "stage": "robot_controller:lift",
     "ok": true,
-    "detail": "steps=17 pos_err=0.0049 rot_err=0.0070"
+    "detail": "steps=15 pos_err=0.0047 rot_err=0.0032"
   },
   {
     "stage": "robot_controller:transport_to_place",
     "ok": true,
-    "detail": "steps=9 pos_err=0.0033 rot_err=0.0032"
+    "detail": "steps=8 pos_err=0.0048 rot_err=0.0008"
   },
   {
     "stage": "robot_controller:descend_to_place",
     "ok": true,
-    "detail": "steps=27 pos_err=0.0632 rot_err=0.0023 [stopped_by_contact]"
+    "detail": "steps=16 pos_err=0.0055 rot_err=0.0112"
   },
   {
     "stage": "robot_controller:open_gripper",
@@ -67,11 +67,11 @@
   {
     "stage": "robot_controller:retract",
     "ok": true,
-    "detail": "steps=25 pos_err=0.0079 rot_err=0.0334 [stopped_by_contact]"
+    "detail": "steps=35 pos_err=0.0079 rot_err=0.0333 [stopped_by_contact]"
   },
   {
     "stage": "outcome_check",
-    "ok": true,
-    "detail": "pos_before=[ 0.04755737 -0.05493167  0.84914659] pos_after=[ 2.32718929e-01 -8.71835468e-04  9.07299081e-01] in_bin_xy=True controller_success=True"
+    "ok": false,
+    "detail": "pos_before=[ 0.04755737 -0.05493167  0.84914659] pos_after=[ 0.04790831 -0.0552984   0.8508651 ] in_bin_xy=False controller_success=True"
   }
 ]

@@ -17,17 +17,17 @@
   {
     "stage": "flip_segmenter",
     "ok": true,
-    "detail": "mask_px=4616 confidence=0.962 roi_bbox=(404, 341, 503, 440)"
+    "detail": "mask_px=4605 confidence=0.958 roi_bbox=(404, 341, 503, 440)"
   },
   {
     "stage": "geometry",
     "ok": true,
-    "detail": "n_raw=4616 n_valid_depth=4616 n_final=1380 table_plane_found=True"
+    "detail": "n_raw=4605 n_valid_depth=4605 n_final=1517 table_plane_found=True"
   },
   {
     "stage": "grasp_planner",
     "ok": true,
-    "detail": "grasp_width=0.0465m yaw=1.7deg grasp_pos=[ 0.52375901  0.0155902  -0.0496087 ]"
+    "detail": "grasp_width=0.0465m yaw=1.7deg grasp_pos=[ 0.52378833  0.01485771 -0.0496096 ]"
   },
   {
     "stage": "robot_controller:pregrasp",
@@ -37,17 +37,17 @@
   {
     "stage": "robot_controller:descend_to_grasp",
     "ok": true,
-    "detail": "steps=15 pos_err=0.0058 rot_err=0.0111"
+    "detail": "steps=15 pos_err=0.0058 rot_err=0.0113"
   },
   {
     "stage": "robot_controller:close_gripper",
     "ok": true,
-    "detail": "steps=20 pos_err=0.0000 rot_err=0.0000"
+    "detail": "steps=18 pos_err=0.0000 rot_err=0.0000"
   },
   {
     "stage": "robot_controller:lift",
     "ok": true,
-    "detail": "steps=15 pos_err=0.0056 rot_err=0.0012"
+    "detail": "steps=15 pos_err=0.0056 rot_err=0.0011"
   },
   {
     "stage": "robot_controller:transport_to_place",
@@ -57,7 +57,7 @@
   {
     "stage": "robot_controller:descend_to_place",
     "ok": true,
-    "detail": "steps=26 pos_err=0.0620 rot_err=0.0063 [stopped_by_contact]"
+    "detail": "steps=26 pos_err=0.0618 rot_err=0.0076 [stopped_by_contact]"
   },
   {
     "stage": "robot_controller:open_gripper",
@@ -72,6 +72,6 @@
   {
     "stage": "outcome_check",
     "ok": true,
-    "detail": "pos_before=[-0.02924503  0.00275253  0.84918891] pos_after=[ 0.23279032 -0.00364385  0.90670391] in_bin_xy=True controller_success=True"
+    "detail": "pos_before=[-0.02924503  0.00275253  0.84918891] pos_after=[ 0.23245994 -0.00330787  0.90672901] in_bin_xy=True controller_success=True"
   }
 ]

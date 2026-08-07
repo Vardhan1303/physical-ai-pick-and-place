@@ -17,47 +17,47 @@
   {
     "stage": "flip_segmenter",
     "ok": true,
-    "detail": "mask_px=5324 confidence=0.941 roi_bbox=(430, 429, 535, 534)"
+    "detail": "mask_px=5329 confidence=0.935 roi_bbox=(430, 429, 535, 534)"
   },
   {
     "stage": "geometry",
     "ok": true,
-    "detail": "n_raw=5324 n_valid_depth=5324 n_final=1925 table_plane_found=True"
+    "detail": "n_raw=5329 n_valid_depth=5329 n_final=1636 table_plane_found=True"
   },
   {
     "stage": "grasp_planner",
     "ok": true,
-    "detail": "grasp_width=0.0306m yaw=41.8deg grasp_pos=[ 0.45950213 -0.10313788 -0.04967948]"
+    "detail": "grasp_width=0.0462m yaw=5.5deg grasp_pos=[ 0.46277645 -0.08469997 -0.04967918]"
   },
   {
     "stage": "robot_controller:pregrasp",
     "ok": true,
-    "detail": "steps=6 pos_err=0.0033 rot_err=0.0642"
+    "detail": "steps=5 pos_err=0.0054 rot_err=0.0154"
   },
   {
     "stage": "robot_controller:descend_to_grasp",
     "ok": true,
-    "detail": "steps=31 pos_err=0.0078 rot_err=0.0032 [stopped_by_contact]"
+    "detail": "steps=16 pos_err=0.0059 rot_err=0.0216"
   },
   {
     "stage": "robot_controller:close_gripper",
     "ok": true,
-    "detail": "steps=16 pos_err=0.0000 rot_err=0.0000"
+    "detail": "steps=19 pos_err=0.0000 rot_err=0.0000"
   },
   {
     "stage": "robot_controller:lift",
     "ok": true,
-    "detail": "steps=15 pos_err=0.0055 rot_err=0.0006"
+    "detail": "steps=15 pos_err=0.0050 rot_err=0.0025"
   },
   {
     "stage": "robot_controller:transport_to_place",
     "ok": true,
-    "detail": "steps=10 pos_err=0.0046 rot_err=0.0049"
+    "detail": "steps=10 pos_err=0.0042 rot_err=0.0053"
   },
   {
     "stage": "robot_controller:descend_to_place",
     "ok": true,
-    "detail": "steps=26 pos_err=0.0603 rot_err=0.0091 [stopped_by_contact]"
+    "detail": "steps=25 pos_err=0.0590 rot_err=0.0096 [stopped_by_contact]"
   },
   {
     "stage": "robot_controller:open_gripper",
@@ -72,6 +72,6 @@
   {
     "stage": "outcome_check",
     "ok": true,
-    "detail": "pos_before=[-0.08964622 -0.09397553  0.84913993] pos_after=[0.24203624 0.00971494 0.90676156] in_bin_xy=True controller_success=True"
+    "detail": "pos_before=[-0.08964622 -0.09397553  0.84913993] pos_after=[ 2.37241212e-01 -8.82935796e-04  9.06894367e-01] in_bin_xy=True controller_success=True"
   }
 ]
