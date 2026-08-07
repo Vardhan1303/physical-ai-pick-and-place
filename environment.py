@@ -213,7 +213,7 @@ class PickPlaceEnv(ManipulationEnv):
     # render was filled edge-to-edge by one out-of-focus gray shape, and
     # ArUco naturally found nothing). Pulling the camera out to 1.3 clears
     # the robot's body while keeping the same azimuth.
-    _CAM_AZIMUTH_DEG = 200
+    _CAM_AZIMUTH_DEG = 155
     _CAM_HORIZ_DIST = 0.9
     _CAMERA_XY_OFFSET = np.array([
         _CAM_HORIZ_DIST * np.cos(np.radians(_CAM_AZIMUTH_DEG)),
