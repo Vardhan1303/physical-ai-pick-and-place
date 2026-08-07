@@ -7,37 +7,37 @@
   {
     "stage": "capture",
     "ok": true,
-    "detail": "rgb=(720, 960, 3) depth_range=(0.413,4.609)m"
+    "detail": "rgb=(720, 960, 3) depth_range=(0.410,4.609)m"
   },
   {
     "stage": "aruco_prompt",
     "ok": true,
-    "detail": "marker_id=42 center=(475.75, 290.25) side_px=24.4 near_edge=False"
+    "detail": "marker_id=42 center=(483.25, 482.0) side_px=22.8 near_edge=False"
   },
   {
     "stage": "flip_segmenter",
     "ok": true,
-    "detail": "mask_px=1618 confidence=0.835 roi_bbox=(419, 234, 531, 346)"
+    "detail": "mask_px=5327 confidence=0.957 roi_bbox=(430, 429, 535, 534)"
   },
   {
     "stage": "geometry",
     "ok": true,
-    "detail": "n_raw=1618 n_valid_depth=1618 n_final=1579 table_plane_found=False"
+    "detail": "n_raw=5327 n_valid_depth=5327 n_final=1595 table_plane_found=True"
   },
   {
     "stage": "grasp_planner",
     "ok": true,
-    "detail": "grasp_width=0.0600m yaw=-0.0deg grasp_pos=[ 0.58898032  0.03433455 -0.05026659]"
+    "detail": "grasp_width=0.0463m yaw=5.6deg grasp_pos=[ 0.46280795 -0.08474341 -0.04967918]"
   },
   {
     "stage": "robot_controller:pregrasp",
     "ok": true,
-    "detail": "steps=7 pos_err=0.0034 rot_err=0.0024"
+    "detail": "steps=5 pos_err=0.0054 rot_err=0.0155"
   },
   {
     "stage": "robot_controller:descend_to_grasp",
     "ok": true,
-    "detail": "steps=15 pos_err=0.0054 rot_err=0.0071"
+    "detail": "steps=16 pos_err=0.0059 rot_err=0.0216"
   },
   {
     "stage": "robot_controller:close_gripper",
@@ -47,17 +47,17 @@
   {
     "stage": "robot_controller:lift",
     "ok": true,
-    "detail": "steps=16 pos_err=0.0051 rot_err=0.0036"
+    "detail": "steps=15 pos_err=0.0050 rot_err=0.0026"
   },
   {
     "stage": "robot_controller:transport_to_place",
     "ok": true,
-    "detail": "steps=9 pos_err=0.0036 rot_err=0.0040"
+    "detail": "steps=10 pos_err=0.0042 rot_err=0.0053"
   },
   {
     "stage": "robot_controller:descend_to_place",
     "ok": true,
-    "detail": "steps=27 pos_err=0.0543 rot_err=0.0089 [stopped_by_contact]"
+    "detail": "steps=26 pos_err=0.0613 rot_err=0.0099 [stopped_by_contact]"
   },
   {
     "stage": "robot_controller:open_gripper",
@@ -72,6 +72,6 @@
   {
     "stage": "outcome_check",
     "ok": true,
-    "detail": "pos_before=[0.02888489 0.03374898 0.84671147] pos_after=[ 2.24830687e-01 -1.50021293e-04  9.05784489e-01] in_bin_xy=True controller_success=True"
+    "detail": "pos_before=[-0.08964622 -0.09397553  0.84913993] pos_after=[ 0.23536386 -0.00420289  0.90674024] in_bin_xy=True controller_success=True"
   }
 ]
