@@ -123,7 +123,22 @@ def run_side_grasp_pipeline(
     seed=0,
     max_steps_per_move=400,
     record_video=True,
+    target_marker_id=None,
 ):
+    """
+    target_marker_id: which ArUco marker to select as the grasp target.
+    Defaults to environment.TARGET_MARKER_ID (Phase 1's single-cylinder
+    scene) for backward compatibility. Pass one of
+    environment_multi.MARKER_ID_BY_SHAPE's values (0/1/2/3) when `env` is
+    a MultiObjectPickPlaceEnv — this is the ONE thing that changes between
+    single-object and multi-object mode; every other line below reads the
+    target's body id / marker size through the generic
+    env.get_object_body_id/get_marker_size accessors (added to
+    environment.py's PickPlaceEnv base class specifically so this
+    function works unmodified against either environment).
+    """
+    if target_marker_id is None:
+        target_marker_id = TARGET_MARKER_ID
     if run_dir is None:
         ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         run_dir = os.path.join("runs", f"side_grasp_{ts}")
@@ -161,7 +176,7 @@ def run_side_grasp_pipeline(
         base_pos, base_mat = get_robot_base_transform(env)
         table_height_world = env.get_table_height()
         table_height_robot = float(((np.array([0, 0, table_height_world]) - base_pos) @ base_mat)[2])
-        marker_size_m = env.get_target_marker_size()
+        marker_size_m = env.get_marker_size(target_marker_id)
         cv2.imwrite(os.path.join(run_dir, "00_rgb.png"), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
         timings["capture"] = time.time() - t0
         log.log("capture", f"rgb={rgb.shape} depth_range=({depth.min():.3f},{depth.max():.3f})m "
@@ -169,7 +184,7 @@ def run_side_grasp_pipeline(
 
         # --- ArUco: detect + select target_marker_id, then estimate pose ---
         t0 = time.time()
-        detection, failure = get_target_prompt(rgb, expected_id=TARGET_MARKER_ID)
+        detection, failure = get_target_prompt(rgb, expected_id=target_marker_id)
         overlay = draw_debug_overlay(rgb, detection, failure)
         cv2.imwrite(os.path.join(run_dir, "01_aruco.png"), overlay)
         if detection is None:
@@ -247,7 +262,7 @@ def run_side_grasp_pipeline(
         recorder = VideoRecorder(env, os.path.join(run_dir, "05_execution.mp4")) if record_video else None
         step_cb = recorder.maybe_capture if recorder else None
 
-        target_body_id = env.target_object_body_id
+        target_body_id = env.get_object_body_id(target_marker_id)
         pos_before = np.array(env.sim.data.body_xpos[target_body_id]).copy()
 
         t0 = time.time()
