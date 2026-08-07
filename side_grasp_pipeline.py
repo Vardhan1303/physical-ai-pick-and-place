@@ -136,6 +136,13 @@ def run_side_grasp_pipeline(
             has_renderer=False, has_offscreen_renderer=True, use_camera_obs=True,
             camera_names=[SIDE_CAMERA_NAME], camera_heights=720, camera_widths=960,
             camera_depths=True, num_distractors=0, seed=seed,
+            # Side-grasp reorientation needs a much larger step budget than
+            # the top-down pipeline's default horizon=1000 — confirmed
+            # in-sandbox: robosuite raises "executing action in terminated
+            # episode" mid-sequence at the default horizon once
+            # execute_side_grasp_plan's larger interpolation budgets
+            # (see its own docstring) are actually used.
+            horizon=5000,
         )
 
     timings = {}
