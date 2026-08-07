@@ -37,7 +37,7 @@ See `THESIS_PLAN.md` for the full architectural rationale, module-by-module desi
 |---|---|
 | ![Per-stage success rates](eval_results/stage_success_rates.png) | ![IoU histogram](eval_results/iou_histogram.png) |
 
-Raw per-trial numbers are in `eval_results/metrics.csv`.
+Raw per-trial numbers are in `eval_results/metrics.csv`. Across a 5-trial sweep: ArUco detection, grasp proposal, and lift all succeeded 100% of the time; full pick-and-place succeeded 3/5 (the one clean failure had an unusually small visible point cloud from that viewing angle, producing an inaccurate grasp width — see Known limitations); mean FLIP mask IoU against ground truth was 0.77.
 
 ## Installation
 
