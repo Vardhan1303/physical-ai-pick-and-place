@@ -277,12 +277,14 @@ class MultiObjectPickPlaceEnv(PickPlaceEnv):
             marker_id = MARKER_ID_BY_SHAPE[shape]
             scale = self._scale_factor()
             rgba = self._random_rgba(shape)
-            material = CustomMaterial(
-                texture="WoodRed" if shape != "cylinder" else "WoodRed",
-                tex_name=f"{shape}_tex", mat_name=f"{shape}_mat",
-                tex_attrib={"type": "cube"},
-                mat_attrib={"texrepeat": "1 1", "specular": "0.4", "shininess": "0.1"},
-            )
+            # No CustomMaterial/texture here (unlike Phase 1's single
+            # cylinder) — a textured material OVERRIDES rgba entirely
+            # (confirmed in-sandbox: with every shape given the same
+            # "WoodRed" texture, all four objects rendered identically red
+            # regardless of their distinct rgba values). Plain rgba
+            # coloring is what makes "randomize color" (and simply
+            # visually telling the four shapes apart) actually work.
+            material = None
 
             if shape == "cylinder":
                 radius, half_length = 0.025 * scale, 0.09 * scale
