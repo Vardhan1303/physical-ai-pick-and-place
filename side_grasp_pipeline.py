@@ -206,18 +206,41 @@ def run_side_grasp_pipeline(
         log.log("marker_pose", f"pos_robot={marker_pos_robot} outward_normal_robot={marker_normal_robot}")
 
         # --- FLIP segmentation from the marker's center pixel ---
+        # ROI sizing: start from the marker's OWN detected pixel size
+        # (segment_from_prompt's default marker_side_px*ROI_SCALE
+        # behavior — no forced large floor), then grow ONCE if the
+        # resulting mask touches the ROI's border (a truncation signal —
+        # the object likely extends past what we cropped). This replaced
+        # an earlier version that always forced a large fixed floor
+        # (ROI_TALL_OBJECT_MIN_HALF_PX) for every object: that worked for
+        # the single tall Phase-1 cylinder but, confirmed in-sandbox on
+        # the multi-object scene, was oversized for smaller/closer-spaced
+        # objects (a box picked up a 0.130m-wide mask that had swallowed
+        # part of a neighboring object). Growing on-demand from a
+        # marker-relative base is the generic, shape-agnostic fix — no
+        # per-object-type branching either way.
         t0 = time.time()
         segmenter = FlipTargetSegmenter(model_size=model_size)
+
+        def _touches_border(seg_result):
+            x0, y0, x1, y1 = seg_result.roi_bbox
+            m = seg_result.mask_full
+            return bool(
+                m[y0, x0:x1].any() or m[y1 - 1, x0:x1].any()
+                or m[y0:y1, x0].any() or m[y0:y1, x1 - 1].any()
+            )
+
         seg = segmenter.segment_from_prompt(
             rgb, detection.center_px, marker_side_px=detection.side_length_px,
             debug_dir=run_dir, debug_tag="03_flip",
-            # Larger ROI floor than the top-down pipeline's default: the
-            # marker sits near the object's BASE (see environment.py's
-            # _add_aruco_decal), so the ROI must reach well above the
-            # marker to see a bottle-tall object's full extent — see
-            # flip_segmenter.py's ROI_TALL_OBJECT_MIN_HALF_PX comment.
-            min_half_px=ROI_TALL_OBJECT_MIN_HALF_PX,
         )
+        if int((seg.mask_full > 0).sum()) > 0 and _touches_border(seg):
+            log.log("flip_segmenter:regrow", "initial mask touched ROI border — retrying with a larger ROI")
+            seg = segmenter.segment_from_prompt(
+                rgb, detection.center_px, marker_side_px=detection.side_length_px,
+                debug_dir=run_dir, debug_tag="03_flip_grown",
+                min_half_px=ROI_TALL_OBJECT_MIN_HALF_PX,
+            )
         timings["flip_segmenter"] = time.time() - t0
         n_fg = int((seg.mask_full > 0).sum())
         log.log("flip_segmenter", f"mask_px={n_fg} confidence={seg.confidence:.3f} roi_bbox={seg.roi_bbox}",
