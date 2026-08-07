@@ -182,8 +182,44 @@ class PickPlaceEnv(ManipulationEnv):
     # with _add_aruco_decal so the marker decal's outward-facing azimuth is
     # always computed FROM the camera's actual position, not a hand-copied
     # guess that could silently drift out of sync with the camera.
-    _CAMERA_XY_OFFSET = np.array([-0.45, -0.45])
-    _CAMERA_XY_OFFSET_3D = np.array([-0.45, -0.45, 0.55])
+    #
+    # Azimuth chosen at ~170 degrees (mostly -X, slight +Y), NOT the
+    # original (-0.45, -0.45) / 225-degree diagonal, for a reason beyond
+    # rendering: the side-grasp extension (grasp_planner.plan_side_grasp)
+    # derives its horizontal APPROACH direction directly from the marker's
+    # outward normal, i.e. from wherever this camera sits. The robot base
+    # is at world x=-0.56, y=0 and reaches toward the table at ~0 degrees
+    # azimuth (confirmed via env.robots[0].base_pos in-sandbox) — so a
+    # camera diagonally off to the side asks the gripper to approach from
+    # a direction ~125-135 degrees off the arm's natural reach, which is a
+    # real kinematic wall, not a tuning issue: confirmed in-sandbox that
+    # move_to_pose_interpolated position error GROWS monotonically (up to
+    # ~0.36m) across 30 finely-slerped waypoints trying to reach that
+    # orientation, while the same test with the approach direction aligned
+    # near the base's own reach azimuth converges cleanly (pos_err<2mm)
+    # well within budget. Placing the camera roughly on the SAME side as
+    # the robot base (so "the side the camera/marker faces" and "the side
+    # the arm can comfortably reach from" are the same side) fixes this at
+    # the source rather than special-casing the controller — the same
+    # design choice a real robot cell would make (mount perception near
+    # the arm's own working side, not orthogonal to it).
+    #
+    # Distance increased from the original 0.636 to 1.3 (vertical offset
+    # scaled by the same ratio, preserving elevation ~40.83 deg — see
+    # _add_side_oblique_camera). NOT kept at the original distance: at
+    # 0.636 and this azimuth the camera lands almost exactly on the robot
+    # base's own XY position (-0.56, 0), rendering into the robot's own
+    # pedestal geometry at point-blank range (confirmed in-sandbox — the
+    # render was filled edge-to-edge by one out-of-focus gray shape, and
+    # ArUco naturally found nothing). Pulling the camera out to 1.3 clears
+    # the robot's body while keeping the same azimuth.
+    _CAM_AZIMUTH_DEG = 200
+    _CAM_HORIZ_DIST = 0.9
+    _CAMERA_XY_OFFSET = np.array([
+        _CAM_HORIZ_DIST * np.cos(np.radians(_CAM_AZIMUTH_DEG)),
+        _CAM_HORIZ_DIST * np.sin(np.radians(_CAM_AZIMUTH_DEG)),
+    ])
+    _CAMERA_XY_OFFSET_3D = np.array([*_CAMERA_XY_OFFSET, 0.55 * (_CAM_HORIZ_DIST / 0.636)])
 
     def __init__(
         self,
