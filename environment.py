@@ -230,7 +230,7 @@ class PickPlaceEnv(ManipulationEnv):
         table_full_size=(0.8, 0.8, 0.05),
         table_friction=(1.0, 5e-3, 1e-4),
         num_distractors=0,
-        target_object_size=(0.025, 0.05),
+        target_object_size=(0.025, 0.10),
         randomize_object_rotation=False,
         use_camera_obs=True,
         has_renderer=False,

@@ -263,6 +263,7 @@ def plan_side_grasp(
     lift_height: float = 0.15,
     width_safety_margin: float = 0.01,
     place_height: Optional[float] = None,
+    height_fraction: float = 0.7,
 ):
     """
     Generic, class-agnostic HORIZONTAL side-grasp planner. Unlike
@@ -324,9 +325,24 @@ def plan_side_grasp(
     # Step 7: grasp height from the visible cloud's own vertical extent
     # (robust percentiles, not raw min/max — same rationale as plan_grasp's
     # top_z estimate: single stray/outlier points shouldn't skew this).
+    #
+    # Biased toward the UPPER part of the visible range (height_fraction
+    # default 0.7, not the geometric midpoint 0.5) for a reason found
+    # in-sandbox, not just tuned by feel: grasping near the table (low
+    # absolute Z) with a HORIZONTAL wrist orientation is a real kinematic
+    # wall for this arm, not a controller tuning issue — confirmed by
+    # directly sweeping target Z at a fixed XY/orientation and finding
+    # move_to_pose_interpolated converges cleanly (pos_err<6mm) around
+    # ~0.06m above robot-base height here but degrades smoothly and then
+    # fails as the target gets closer to the table. A real robot has the
+    # same problem (the wrist and gripper body need vertical clearance
+    # above the table even when approaching "horizontally"), so grasping
+    # higher on a tall enough object is the physically correct fix, not a
+    # workaround — this is also why the target cylinder was sized more
+    # bottle-like (taller) rather than the earlier short placeholder.
     z = points_robot[:, 2]
     z_min, z_max = float(np.percentile(z, 2)), float(np.percentile(z, 98))
-    grasp_z = (z_min + z_max) / 2.0
+    grasp_z = z_min + height_fraction * (z_max - z_min)
     if table_height is not None and grasp_z < table_height + 0.005:
         return None, GraspFailure(
             "degenerate_grasp_height",
