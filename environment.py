@@ -487,7 +487,24 @@ class PickPlaceEnv(ManipulationEnv):
         azimuth = float(np.arctan2(self._CAMERA_XY_OFFSET[1], self._CAMERA_XY_OFFSET[0]))
         decal_quat = radial_decal_quat(azimuth)
         decal_r = radius + 0.0006  # flush against the curved surface, tiny clearance
-        decal_pos = [decal_r * np.cos(azimuth), decal_r * np.sin(azimuth), 0]
+
+        # Decal height: a FIXED absolute height above the object's base
+        # (not the object's vertical center) — confirmed necessary
+        # in-sandbox when the cylinder was made taller (bottle-proportioned)
+        # for grasp-height reachability reasons (see grasp_planner.py's
+        # plan_side_grasp height_fraction comment): centering the decal on
+        # a taller object pushes it higher in absolute world Z, which
+        # changes the viewing angle from the fixed-height camera enough
+        # that the marker rendered visibly skewed and cv2.aruco stopped
+        # detecting it. Anchoring to a fixed height above the base
+        # (matching where the marker already sat and was proven to detect
+        # on the original, shorter object) keeps the viewing geometry
+        # constant regardless of object height. Clamped to stay within the
+        # object's own vertical extent for very short future objects.
+        target_height_above_base = 0.045
+        height_above_base = float(np.clip(target_height_above_base, decal_half + 0.005, 2 * half_length - decal_half - 0.005))
+        decal_local_z = height_above_base - half_length
+        decal_pos = [decal_r * np.cos(azimuth), decal_r * np.sin(azimuth), decal_local_z]
 
         decal = new_geom(
             name="target_marker_decal",
