@@ -7,10 +7,10 @@ Builds a `PickPlaceEnv` (a robosuite `ManipulationEnv` subclass, modeled on
 robosuite's own `Lift` environment — see
 robosuite/environments/manipulation/lift.py in the installed package) with:
   - a Franka Panda arm on a table (robosuite's TableArena)
-  - one target object (BoxObject placeholder for Phase 1 — later phases
-    swap in bottle/can/cup meshes; the object's IDENTITY is never used by
-    perception, only by this module for scene construction and by
-    evaluation.py for ground truth)
+  - one target object (an upright CylinderObject — a bottle-like round
+    body with an ArUco decal on its curved side, not a flat top face; the
+    object's IDENTITY is never used by perception, only by this module for
+    scene construction and by evaluation.py for ground truth)
   - optional distractor objects (0 by default — Phase 1 constraint: "one
     target object, no clutter")
   - a destination bin (a fixed visual BoxObject with no free joint)
@@ -56,7 +56,7 @@ macros.IMAGE_CONVENTION = "opencv"
 
 from robosuite.environments.manipulation.manipulation_env import ManipulationEnv
 from robosuite.models.arenas import TableArena
-from robosuite.models.objects import BoxObject
+from robosuite.models.objects import BoxObject, CylinderObject
 from robosuite.models.tasks import ManipulationTask
 from robosuite.utils.mjcf_utils import CustomMaterial, new_geom
 from robosuite.utils.placement_samplers import UniformRandomSampler
@@ -135,7 +135,9 @@ class PickPlaceEnv(ManipulationEnv):
     Args (beyond what ManipulationEnv/Lift already document):
         num_distractors (int): how many extra (non-target) objects to
             scatter on the table. 0 for Phase 1's "no clutter" constraint.
-        target_object_size (3-tuple): half-extents of the Phase 1 BoxObject
+        target_object_size (2-tuple): (radius, half_length) of the target
+            CylinderObject — a bottle-like upright cylinder, ArUco marker
+            on its curved side rather than a flat top face
             placeholder target. Later phases will parameterize the target's
             actual mesh/shape; nothing in this class hard-codes "box" as a
             perception assumption — it's just what Phase 1 needs to exist.
@@ -150,7 +152,7 @@ class PickPlaceEnv(ManipulationEnv):
         table_full_size=(0.8, 0.8, 0.05),
         table_friction=(1.0, 5e-3, 1e-4),
         num_distractors=0,
-        target_object_size=(0.025, 0.025, 0.05),
+        target_object_size=(0.025, 0.05),
         randomize_object_rotation=False,
         use_camera_obs=True,
         has_renderer=False,
@@ -233,7 +235,7 @@ class PickPlaceEnv(ManipulationEnv):
             texture="WoodRed", tex_name="target_tex", mat_name="target_mat",
             tex_attrib=tex_attrib, mat_attrib=mat_attrib,
         )
-        self.target_object = BoxObject(
+        self.target_object = CylinderObject(
             name="target_object",
             size_min=self.target_object_size,
             size_max=self.target_object_size,
@@ -320,23 +322,35 @@ class PickPlaceEnv(ManipulationEnv):
         camera.set("quat", " ".join(str(v) for v in quat))
         camera.set("fovy", "45")
 
-    def _add_aruco_decal(self, box_obj: BoxObject):
+    def _add_aruco_decal(self, cyl_obj: CylinderObject):
         """
-        Attaches an ArUco marker as a thin decal geom on the target's -Y
-        face (the face pointing toward side_oblique_camera, given the
-        camera's [-0.45,-0.45,...] offset and the fixed yaw=0 placement —
-        confirmed by direct render, see THESIS_PLAN.md's Phase 2 notes).
+        Attaches an ArUco marker as a thin flat decal geom tangent to the
+        target cylinder's curved side, on the -Y side (facing
+        side_oblique_camera, given the camera's [-0.45,-0.45,...] offset
+        and the fixed yaw=0 placement — same facing convention as the
+        earlier box-top-face decal).
 
-        Mechanism: `box_obj._obj` is the real ET.Element robosuite's own
+        Mechanism: `cyl_obj._obj` is the real ET.Element robosuite's own
         `PrimitiveObject._get_object_subtree_` builds for this object (see
         robosuite/models/objects/generated_objects.py) — appending a geom
         to it directly, before the object is merged into ManipulationTask,
         is the same thing robosuite's own per-instance naming-prefix pass
         (`add_prefix`) expects to walk over; it isn't a private workaround,
         it's the one mutation point robosuite exposes before assembly.
-        Mirrors the old raw-MuJoCo pipeline's marker-sticker geom pattern
-        (thin flush box, own material, contype=0/conaffinity=0 — visual
-        only, no physics interaction) rather than inventing a new approach.
+
+        Why a flat decal instead of a texture wrapped around the cylinder:
+        the earlier box version found MuJoCo's 2D-texture mapping on a box
+        geom only resolves correctly on the face normal to that geom's OWN
+        local Z axis (side faces render flat gray, no pattern). The decal
+        here is its own independent thin box geom (not the cylinder's own
+        surface texture), so the same fix applies directly: give the decal
+        a `quat` that points ITS local Z outward, radially away from the
+        cylinder's axis, and the previously-proven "face normal to local Z
+        renders correctly" case still holds — just aimed sideways instead
+        of straight up. This specific radial placement hasn't been
+        rendered before (the box case only ever needed straight-up), so it
+        was verified by an actual render + cv2.aruco detection pass, not
+        assumed from the math alone (see THESIS_PLAN.md).
         """
         marker_path = ensure_marker_png(TARGET_MARKER_ID, ARUCO_DICT_NAME)
         marker_material = CustomMaterial(
@@ -346,50 +360,51 @@ class PickPlaceEnv(ManipulationEnv):
             tex_attrib={"type": "2d"},
             mat_attrib={"specular": "0", "shininess": "0"},
         )
-        box_obj.append_material(marker_material)
+        cyl_obj.append_material(marker_material)
         # append_material() immediately re-runs robosuite's own add_prefix()
-        # over box_obj.asset (see objects.py::append_material), so the
+        # over cyl_obj.asset (see objects.py::append_material), so the
         # material we just added is now named f"{naming_prefix}target_marker_mat",
         # not the bare "target_marker_mat" we passed to CustomMaterial. That
         # prefixing pass only touches .asset, not .obj — and the ONE pass
         # that does prefix .obj's geoms already ran earlier, during
-        # BoxObject.__init__ (_get_object_properties), before this decal
-        # geom existed. So the decal must reference the already-prefixed
-        # name directly, or MuJoCo's XML compiler fails with "material ...
-        # not found" (hit and fixed while verifying this in-sandbox).
-        prefixed_mat_name = box_obj.naming_prefix + "target_marker_mat"
+        # CylinderObject.__init__ (_get_object_properties), before this
+        # decal geom existed. So the decal must reference the
+        # already-prefixed name directly, or MuJoCo's XML compiler fails
+        # with "material ... not found" (hit and fixed on the box version).
+        prefixed_mat_name = cyl_obj.naming_prefix + "target_marker_mat"
 
-        half_x, half_y, half_z = box_obj.size
-        decal_half = 0.8 * min(half_x, half_y)  # decal smaller than the face it sits on
-        # On the TOP face (thin along Z), not a side face. Two things had
-        # to be confirmed in-sandbox before landing here:
-        #   1. A grayscale-only PNG silently renders as flat gray (no
-        #      pattern, no error) — MuJoCo's texture loader needs RGB.
-        #      Fixed in ensure_marker_png (cv2.COLOR_GRAY2BGR convert).
-        #   2. Even with an RGB PNG, a decal thin-along-Y (flush against a
-        #      SIDE face) still rendered flat gray, while a direct
-        #      side-by-side test of the OLD raw-MuJoCo pipeline's marker
-        #      geoms (thin-along-Z, on the TOP face, same DICT_6X6_250,
-        #      same MUJOCO_GL=glx software renderer) rendered its pattern
-        #      correctly and detected via cv2.aruco with no changes. So the
-        #      2D-texture-on-a-box mapping in this MuJoCo build only
-        #      resolves correctly for the face normal to local Z — side
-        #      faces don't get a usable UV mapping. Since
-        #      side_oblique_camera is elevated ~40deg (not purely
-        #      side-on), the top face is legitimately visible from it, so
-        #      this isn't a workaround so much as adopting the one
-        #      orientation actually proven to render/detect correctly.
+        radius, half_length = cyl_obj.size
+        # Decal in-plane half-extents: width along the tangent (must stay
+        # well under the diameter so the flat patch doesn't visibly poke
+        # through the curve at its edges), height along the cylinder's
+        # axis (kept short of the full length so it reads as a label band,
+        # not the whole body).
+        decal_half_w = 0.5 * radius
+        decal_half_h = 0.4 * half_length
+
+        # Orientation: identity quat would point the decal's local Z
+        # "up" (+world Z), same as the old top-face case. We instead need
+        # local Z pointing in -Y (radially outward on the camera-facing
+        # side), local Y pointing +Z (so the marker sits upright, not
+        # rotated 90deg), and local X left at +X (tangent to the curve,
+        # horizontal). That's a +90deg rotation about the X axis:
+        #   R = Rx(90deg): X->X, Y->+Z, Z->-Y
+        # As a quaternion (MuJoCo's w,x,y,z convention): [cos45, sin45, 0, 0].
+        half_ang = np.pi / 4
+        decal_quat = [np.cos(half_ang), np.sin(half_ang), 0.0, 0.0]
+
         decal = new_geom(
             name="target_marker_decal",
             type="box",
-            size=[decal_half, decal_half, 0.0005],
-            pos=[0, 0, half_z + 0.0006],
+            size=[decal_half_w, decal_half_h, 0.0005],
+            pos=[0, -(radius + 0.0006), 0],
+            quat=decal_quat,
             group=1,
             material=prefixed_mat_name,
             contype=0,
             conaffinity=0,
         )
-        box_obj._obj.append(decal)
+        cyl_obj._obj.append(decal)
 
     def _setup_references(self):
         super()._setup_references()
