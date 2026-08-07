@@ -109,7 +109,8 @@ def set_park_pose(model, data, arm_addrs):
 
 
 def _goto_linear(model, data, hand_id, arm_addrs, arm_actuator_ids, target_pos, target_R,
-                  n_wp=N_WAYPOINTS, steps_per_wp=STEPS_PER_WAYPOINT, frame_callback=None):
+                  n_wp=N_WAYPOINTS, steps_per_wp=STEPS_PER_WAYPOINT, frame_callback=None,
+                  step_callback=None):
     tcp, start_R = get_tcp_pose(model, data, hand_id)
     start_quat = mat2quat(start_R)
     target_quat = mat2quat(target_R)
@@ -125,17 +126,26 @@ def _goto_linear(model, data, hand_id, arm_addrs, arm_actuator_ids, target_pos, 
             for act_id, q in zip(arm_actuator_ids, target_qpos):
                 data.ctrl[act_id] = q
             mujoco.mj_step(model, data)
+            # Fires every physics step — for a live viewer (mujoco.viewer),
+            # not for the video-frame capture below (that only needs one
+            # shot per waypoint; syncing a GUI window that often would be
+            # both wasteful and unnecessarily jumpy in the other direction).
+            if step_callback:
+                step_callback()
         # One frame per waypoint (not per whole segment) so recorded video
         # shows smooth motion rather than a jump-cut between segment ends.
         if frame_callback:
             frame_callback()
 
 
-def _set_gripper(model, data, gripper_actuator_id, ctrl_value, steps=GRASP_STEPS, frame_callback=None):
+def _set_gripper(model, data, gripper_actuator_id, ctrl_value, steps=GRASP_STEPS, frame_callback=None,
+                  step_callback=None):
     capture_every = max(steps // 4, 1)
     for i in range(steps):
         data.ctrl[gripper_actuator_id] = ctrl_value
         mujoco.mj_step(model, data)
+        if step_callback:
+            step_callback()
         if frame_callback and i % capture_every == 0:
             frame_callback()
 
@@ -169,14 +179,18 @@ def _deactivate_weld(data, eq_id):
 
 
 def run_pick_and_place(model, data, object_name: str, pick_xy, place_xy, grasp_yaw,
-                        grasp_height, frame_callback=None):
+                        grasp_height, frame_callback=None, step_callback=None):
     """
     object_name: one of 'obj_square', 'obj_circle', 'obj_triangle' — used to
     look up the matching weld constraint ('weld_square' etc.) by name.
     pick_xy, place_xy: (x, y) world tuples. grasp_height: world Z of the
     object's vertical center (where the gripper closes around it).
-    frame_callback: optional fn() called after each physics step, for
-    recording video frames without coupling this module to any video code.
+    frame_callback: optional fn() called once per waypoint, for recording
+    video frames without coupling this module to any video code.
+    step_callback: optional fn() called after EVERY physics step, for
+    driving a live mujoco.viewer window (see watch_live.py) — much higher
+    frequency than frame_callback, appropriate for a GUI sync rather than a
+    saved-frame grab.
     """
     hand_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "hand")
     obj_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, object_name)
@@ -194,17 +208,21 @@ def run_pick_and_place(model, data, object_name: str, pick_xy, place_xy, grasp_y
 
     def goto(target_pos, **kwargs):
         _goto_linear(model, data, hand_id, arm_addrs, arm_actuator_ids, target_pos, R,
-                     frame_callback=frame_callback, **kwargs)
+                     frame_callback=frame_callback, step_callback=step_callback, **kwargs)
+
+    def gripper(ctrl_value, **kwargs):
+        _set_gripper(model, data, gripper_actuator_id, ctrl_value,
+                     frame_callback=frame_callback, step_callback=step_callback, **kwargs)
 
     # 1. Pre-grasp: above the object, gripper open.
-    _set_gripper(model, data, gripper_actuator_id, GRIPPER_OPEN_CTRL, steps=1)
+    gripper(GRIPPER_OPEN_CTRL, steps=1)
     goto([px, py, grasp_height + APPROACH_HEIGHT])
 
     # 2. Descend to grasp height.
     goto([px, py, grasp_height])
 
     # 3. Close gripper, then lock the weld at the pose it actually grasped at.
-    _set_gripper(model, data, gripper_actuator_id, GRIPPER_CLOSED_CTRL, frame_callback=frame_callback)
+    gripper(GRIPPER_CLOSED_CTRL)
     _activate_weld(model, data, eq_id, hand_id, obj_body_id)
 
     # 4. Lift.
@@ -218,7 +236,7 @@ def run_pick_and_place(model, data, object_name: str, pick_xy, place_xy, grasp_y
 
     # 7. Release: drop the weld, then open the gripper.
     _deactivate_weld(data, eq_id)
-    _set_gripper(model, data, gripper_actuator_id, GRIPPER_OPEN_CTRL, frame_callback=frame_callback)
+    gripper(GRIPPER_OPEN_CTRL)
 
     # 8. Retract.
     goto([lx, ly, grasp_height + APPROACH_HEIGHT])
