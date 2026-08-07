@@ -99,6 +99,25 @@ def world_to_robot_base(points_world: np.ndarray, base_pos: np.ndarray, base_mat
     return (points_world - base_pos.reshape(1, 3)) @ base_mat  # R^T applied via right-multiply
 
 
+def direction_camera_to_world(v_cam: np.ndarray, cam_to_world_T: np.ndarray) -> np.ndarray:
+    """Rotates (does NOT translate) a direction vector from camera frame
+    to world frame — for things like aruco_prompt.py's marker outward
+    normal, which is an orientation, not a point. Same rotation
+    `camera_to_world` applies to points, just without the translation
+    component (the 4th column / homogeneous-1 row of cam_to_world_T)."""
+    return (cam_to_world_T[:3, :3] @ np.asarray(v_cam, dtype=np.float64)).astype(np.float32)
+
+
+def direction_world_to_robot_base(v_world: np.ndarray, base_mat: np.ndarray) -> np.ndarray:
+    """Rotates (does NOT translate) a direction vector from world frame to
+    robot-base frame — the direction-only counterpart of
+    world_to_robot_base, consistent with the same `@ base_mat` convention
+    used there (base_mat rotates base-frame -> world-frame; a world-frame
+    direction is carried into base frame via `v_world @ base_mat`, i.e.
+    `base_mat.T @ v_world` for a column vector)."""
+    return (np.asarray(v_world, dtype=np.float64) @ base_mat).astype(np.float32)
+
+
 def remove_statistical_outliers(points: np.ndarray, mad_k: float = 6.0) -> np.ndarray:
     """
     Removes points far from the cloud's robust center — standard RGB-D

@@ -72,9 +72,20 @@ TARGET_MARKER_ID = 42  # arbitrary, chosen distinct from the old pipeline's mark
 
 MARKERS_DIR = Path(__file__).resolve().parent / "markers"
 
+# Defaults for ensure_marker_png's generated canvas. Exposed at module level
+# (not just as function-default-args) because solvePnP-based marker pose
+# estimation (aruco_prompt.py::estimate_marker_pose) needs to know exactly
+# what physical size corresponds to cv2.aruco's DETECTED corners — those
+# corners bound the black-bordered PATTERN square only, not the white
+# quiet-zone margin baked around it, so the real-world marker size fed to
+# solvePnP must be scaled by marker_px / (marker_px + 2*quiet_zone_px), not
+# the full decal size. See _add_aruco_decal / get_target_marker_size.
+MARKER_PATTERN_PX = 200
+MARKER_QUIET_ZONE_PX = 40
+
 
 def ensure_marker_png(marker_id: int, dict_name: str = ARUCO_DICT_NAME,
-                       marker_px: int = 200, quiet_zone_px: int = 40) -> str:
+                       marker_px: int = MARKER_PATTERN_PX, quiet_zone_px: int = MARKER_QUIET_ZONE_PX) -> str:
     """
     Generates (idempotently) a printable ArUco marker PNG with a white
     quiet-zone border — required for reliable cv2.aruco detection, the
@@ -412,13 +423,28 @@ class PickPlaceEnv(ManipulationEnv):
         prefixed_mat_name = cyl_obj.naming_prefix + "target_marker_mat"
 
         radius, half_length = cyl_obj.size
-        # Decal in-plane half-extents: width along the tangent (must stay
-        # well under the diameter so the flat patch doesn't visibly poke
-        # through the curve at its edges), height along the cylinder's
-        # axis (kept short of the full length so it reads as a label band,
-        # not the whole body).
-        decal_half_w = 0.5 * radius
-        decal_half_h = 0.4 * half_length
+        # Decal is SQUARE (equal half-extents), not just "small enough to
+        # fit" — cv2.aruco pose estimation (solvePnP against 4 known-planar
+        # corners, see aruco_prompt.py::estimate_marker_pose) assumes the
+        # real-world marker is a square of one known side length. An
+        # earlier version used different width/height half-extents (0.5*
+        # radius vs 0.4*half_length); the marker still rendered and decoded
+        # fine for the (u,v) FLIP-prompt use case, but a non-square marker
+        # would silently bias any pose/normal estimate computed from it.
+        # Sized to stay well under the diameter (so the flat patch doesn't
+        # visibly poke through the curve at its edges) and under the
+        # cylinder's height (so it reads as a label band, not the whole
+        # body).
+        decal_half = min(0.5 * radius, 0.35 * half_length)
+
+        # Real-world size of the DETECTED marker (the black-pattern square
+        # cv2.aruco's corners bound), not the full decal-with-quiet-zone —
+        # see MARKER_PATTERN_PX/MARKER_QUIET_ZONE_PX's module-level comment.
+        # Stored per-instance (not a fixed module constant) since it
+        # depends on this object's actual size, which later phases may
+        # randomize.
+        pattern_fraction = MARKER_PATTERN_PX / (MARKER_PATTERN_PX + 2 * MARKER_QUIET_ZONE_PX)
+        self.target_marker_size_m = 2 * decal_half * pattern_fraction
 
         # Azimuth pointing from the object toward the camera's actual XY
         # offset (see docstring above for why this isn't hardcoded to -Y).
@@ -430,7 +456,7 @@ class PickPlaceEnv(ManipulationEnv):
         decal = new_geom(
             name="target_marker_decal",
             type="box",
-            size=[decal_half_w, decal_half_h, 0.0005],
+            size=[decal_half, decal_half, 0.0005],
             pos=decal_pos,
             quat=decal_quat,
             group=1,
@@ -489,6 +515,16 @@ class PickPlaceEnv(ManipulationEnv):
         (same category as a camera mount point), not object ground truth.
         For use by geometry.py/grasp_planner.py as a plane-fit/height hint."""
         return float(self.table_offset[2] + self.table_full_size[2] / 2)
+
+    def get_target_marker_size(self) -> float:
+        """Real-world side length (meters) of the target's ArUco marker
+        PATTERN square — set by _add_aruco_decal, see its comment on why
+        this isn't just the decal's full physical size. Legitimate for
+        aruco_prompt.py's solvePnP-based pose estimation to read directly
+        (it's a marker/scene construction fact, analogous to knowing your
+        printed marker's size on a real robot — not object ground truth
+        about pose, class, or segmentation)."""
+        return float(self.target_marker_size_m)
 
     def get_bin_top_center(self) -> np.ndarray:
         """World-frame XYZ of the destination bin's top surface center —

@@ -51,6 +51,32 @@ class GraspFailure:
     detail: str = ""
 
 
+@dataclass
+class SideGraspPose:
+    pos: np.ndarray   # (3,) robot-base frame
+    R: np.ndarray     # (3,3) robot-base frame rotation matrix (full orientation,
+                       # not just a yaw — a horizontal approach isn't expressible
+                       # as a single Z-rotation of the top-down convention)
+
+
+@dataclass
+class SideGraspPlan:
+    safe_high: SideGraspPose   # high waypoint above the table before reconfiguring
+    pregrasp: SideGraspPose    # outside the object, along the marker's outward normal
+    grasp: SideGraspPose        # horizontal approach target, mid-height on the visible cloud
+    retreat: SideGraspPose      # horizontal retreat, same height as grasp, back along outward normal
+    lift: SideGraspPose         # retreat position, lifted vertically
+    transport: SideGraspPose    # above the destination, at lift height
+    place_descend: SideGraspPose  # lowered to release height above the destination
+    grasp_width: float            # planned finger separation (m) — a starting point, not final
+    approach_direction: np.ndarray   # (3,) unit, robot-base frame, direction of travel toward the object
+    closing_direction: np.ndarray    # (3,) unit, robot-base frame, finger-separation axis
+    up_direction: np.ndarray          # (3,) unit, robot-base frame, table-up axis used to derive the above
+    marker_pos: np.ndarray             # (3,) the selected marker's own position, robot-base frame
+    marker_outward_normal: np.ndarray   # (3,) the selected marker's own outward normal, robot-base frame,
+                                          # projected/normalized onto the table plane
+
+
 def downward_grasp_rotation(yaw: float) -> np.ndarray:
     """3x3 rotation: gripper approach axis points straight down (-Z),
     rotated about Z by `yaw`. Same convention as the old pipeline's
@@ -183,6 +209,192 @@ def plan_grasp(
     # place descent point kept separate so robot_controller can descend
     # then release, mirroring the pick side's approach/descend structure.
     plan.__dict__["place_descend"] = GraspPose(place_pos, yaw)
+    return plan, None
+
+
+def axes_to_gripper_rotation(approach_direction: np.ndarray, closing_direction: np.ndarray) -> np.ndarray:
+    """
+    Builds a robot-base-frame gripper rotation matrix from two physically
+    meaningful axes, instead of a fixed/hard-coded Euler angle.
+
+    Axis convention verified against the EXISTING top-down grasp math
+    (downward_grasp_rotation above) rather than assumed: expanding
+    `Rz(yaw) @ Rx180` by hand shows that in whatever final orientation the
+    gripper is commanded to, its own local Z axis always ends up equal to
+    the direction of travel/approach, and its local X axis always ends up
+    equal to the direction the fingers close along (confirmed numerically
+    too — see THESIS_PLAN.md's Phase-1-extension notes). Reusing that same
+    convention here means side-grasp poses compose correctly with the
+    EXISTING move_to_pose/OSC controller code in robot_controller.py
+    without any changes there.
+
+    local Z = approach_direction (tool axis, direction of travel toward
+        the object)
+    local X = closing_direction (finger-separation axis)
+    local Y = Z x X (completes a right-handed frame — not necessarily
+        "up"; for a horizontal approach, Y ends up horizontal too, the
+        same way X and Y both end up horizontal in the top-down case when
+        Z points straight down)
+    """
+    z = np.asarray(approach_direction, dtype=float)
+    z = z / np.linalg.norm(z)
+    x = np.asarray(closing_direction, dtype=float)
+    x = x - np.dot(x, z) * z  # Gram-Schmidt: strip any approach-axis component, guard against
+    x_norm = np.linalg.norm(x)  # slightly non-orthogonal inputs rather than assuming perfection
+    if x_norm < 1e-6:
+        raise ValueError("closing_direction is parallel to approach_direction — cannot build a frame")
+    x = x / x_norm
+    y = np.cross(z, x)
+    return np.column_stack([x, y, z])
+
+
+def plan_side_grasp(
+    points_robot: np.ndarray,
+    marker_pos_robot: np.ndarray,
+    marker_outward_normal_robot: np.ndarray,
+    place_xy: tuple,
+    gripper_max_width: float = 0.08,
+    gripper_min_clearance: float = 0.005,
+    table_up: tuple = (0.0, 0.0, 1.0),
+    table_height: Optional[float] = None,
+    safe_height_above_table: float = 0.20,
+    approach_standoff: float = 0.12,
+    retreat_distance: float = 0.10,
+    lift_height: float = 0.15,
+    width_safety_margin: float = 0.01,
+    place_height: Optional[float] = None,
+):
+    """
+    Generic, class-agnostic HORIZONTAL side-grasp planner. Unlike
+    plan_grasp above (top-down, closes around a table-projected
+    footprint), this approaches the object horizontally from whichever
+    side its ArUco marker is visible on, and closes the gripper across
+    the object's width as seen from that direction. Nothing here is
+    specific to any object shape — the only shape-derived input is the
+    point cloud's own extent; the approach geometry comes entirely from
+    the marker's own detected pose, never from object identity or MuJoCo
+    ground truth.
+
+    points_robot: (N,3) target point cloud, robot-base frame
+        (geometry.py's output).
+    marker_pos_robot, marker_outward_normal_robot: the SELECTED marker's
+        own position and outward-facing normal, already carried into
+        robot-base frame (aruco_prompt.estimate_marker_pose +
+        geometry.py's direction_camera_to_world / direction_world_to_robot_base
+        / camera_to_world / world_to_robot_base) — never MuJoCo ground truth.
+    place_xy: (x, y) destination in robot-base frame.
+    table_height: robot-base-frame Z of the table surface — used only to
+        reject a degenerate/at-the-table grasp height and to anchor the
+        safe-high waypoint; same "fixed scene constant" legitimacy as
+        plan_grasp's use of it.
+
+    Returns (SideGraspPlan, None) or (None, GraspFailure).
+    """
+    if len(points_robot) < 5:
+        return None, GraspFailure("insufficient_points", f"only {len(points_robot)} points in target cloud")
+
+    up = np.asarray(table_up, dtype=float)
+    up = up / np.linalg.norm(up)
+
+    # Steps 1-3: resolve the marker's outward normal to a horizontal
+    # approach axis. The normal is already sign-resolved toward the
+    # camera by estimate_marker_pose; here we only project it onto the
+    # table plane (a marker glued to a mostly-vertical side surface
+    # should already be near-horizontal, but this guards against small
+    # estimation tilt rather than assuming a perfectly vertical decal).
+    normal = np.asarray(marker_outward_normal_robot, dtype=float)
+    normal_horiz = normal - np.dot(normal, up) * up
+    normal_horiz_norm = np.linalg.norm(normal_horiz)
+    if normal_horiz_norm < 1e-2:
+        return None, GraspFailure(
+            "degenerate_marker_normal",
+            f"marker outward normal is nearly parallel to table-up ({normal}) — cannot derive a horizontal approach",
+        )
+    outward_normal = normal_horiz / normal_horiz_norm
+
+    # Step 4: direction of TRAVEL toward the object (opposite the outward normal).
+    approach_direction = -outward_normal
+    # Step 8: finger-closing axis, perpendicular to approach, in the table plane.
+    closing_direction = np.cross(up, approach_direction)
+    closing_norm = np.linalg.norm(closing_direction)
+    if closing_norm < 1e-6:
+        return None, GraspFailure("degenerate_closing_direction", "table_up parallel to approach_direction")
+    closing_direction = closing_direction / closing_norm
+
+    # Step 7: grasp height from the visible cloud's own vertical extent
+    # (robust percentiles, not raw min/max — same rationale as plan_grasp's
+    # top_z estimate: single stray/outlier points shouldn't skew this).
+    z = points_robot[:, 2]
+    z_min, z_max = float(np.percentile(z, 2)), float(np.percentile(z, 98))
+    grasp_z = (z_min + z_max) / 2.0
+    if table_height is not None and grasp_z < table_height + 0.005:
+        return None, GraspFailure(
+            "degenerate_grasp_height",
+            f"estimated grasp height {grasp_z:.3f}m is at/below the table ({table_height:.3f}m)",
+        )
+
+    # Grasp XY: the point cloud's OWN centroid, not the marker's surface
+    # position — the marker sits on the object's visible surface, offset
+    # from the object's true central axis by roughly its radius, while
+    # the cloud's centroid (from one oblique camera seeing mostly the
+    # near/front surface) is a closer proxy for the object's horizontal
+    # center. Documented single-camera 2.5D limitation, same category as
+    # plan_grasp's — an estimate, not a measurement.
+    grasp_xy = points_robot[:, :2].mean(axis=0)
+    grasp_pos = np.array([grasp_xy[0], grasp_xy[1], grasp_z])
+
+    # Step 9: initial gripper-opening estimate — visible extent along the
+    # CLOSING direction specifically (closing_direction is horizontal by
+    # construction, so a plain dot product against the full 3D points is
+    # correct and needs no separate XY-only special case).
+    closing_proj = points_robot @ closing_direction
+    extent = float(np.percentile(closing_proj, 95) - np.percentile(closing_proj, 5))
+    grasp_width = extent + width_safety_margin
+    if grasp_width > gripper_max_width:
+        return None, GraspFailure(
+            "object_too_wide",
+            f"estimated grasp width {grasp_width:.3f}m (+margin) exceeds gripper max {gripper_max_width:.3f}m",
+        )
+    if grasp_width < gripper_min_clearance:
+        # Step 10 still applies regardless (close-until-contact, not this
+        # estimate alone) — this rejects an implausibly small estimate
+        # up front, same as plan_grasp's degenerate_footprint check.
+        return None, GraspFailure(
+            "degenerate_footprint",
+            f"estimated grasp width {grasp_width:.4f}m is implausibly small — likely an under-segmented mask",
+        )
+
+    R = axes_to_gripper_rotation(approach_direction, closing_direction)
+
+    # Step 11: pre-grasp OUTSIDE the object, along the marker's outward normal.
+    pregrasp_pos = grasp_pos + outward_normal * approach_standoff
+    # Step 6 (retreat, before lifting): horizontal, back along outward normal.
+    retreat_pos = grasp_pos + outward_normal * retreat_distance
+    lift_pos = retreat_pos + up * lift_height
+
+    table_z = table_height if table_height is not None else grasp_z
+    safe_high_z = table_z + safe_height_above_table
+    safe_high_pos = np.array([pregrasp_pos[0], pregrasp_pos[1], safe_high_z])
+
+    release_z = grasp_z if place_height is None else place_height
+    transport_pos = np.array([place_xy[0], place_xy[1], lift_pos[2]])
+    place_descend_pos = np.array([place_xy[0], place_xy[1], release_z])
+
+    plan = SideGraspPlan(
+        safe_high=SideGraspPose(safe_high_pos, R),
+        pregrasp=SideGraspPose(pregrasp_pos, R),
+        grasp=SideGraspPose(grasp_pos, R),
+        retreat=SideGraspPose(retreat_pos, R),
+        lift=SideGraspPose(lift_pos, R),
+        transport=SideGraspPose(transport_pos, R),
+        place_descend=SideGraspPose(place_descend_pos, R),
+        grasp_width=grasp_width,
+        approach_direction=approach_direction,
+        closing_direction=closing_direction,
+        up_direction=up,
+        marker_pos=np.asarray(marker_pos_robot, dtype=float),
+        marker_outward_normal=outward_normal,
+    )
     return plan, None
 
 

@@ -346,6 +346,88 @@ def execute_grasp_plan(env, plan, base_pos: np.ndarray, base_mat: np.ndarray,
     return result
 
 
+def execute_side_grasp_plan(env, plan, base_pos: np.ndarray, base_mat: np.ndarray,
+                             step_callback=None, max_steps_per_move: int = 200) -> ExecutionResult:
+    """
+    Runs the HORIZONTAL side-grasp sequence for one
+    grasp_planner.SideGraspPlan: safe-high -> pregrasp -> horizontal
+    approach -> close -> retreat -> lift -> transport -> lower -> release
+    -> retract.
+
+    Deliberately structured to mirror execute_grasp_plan above as closely
+    as the different motion shape allows, and reuses every primitive
+    (move_to_pose, move_to_pose_interpolated, close_gripper_until_contact,
+    open_gripper) completely unchanged — only the POSES and the fact that
+    each SideGraspPose already carries a full rotation matrix (from
+    grasp_planner.axes_to_gripper_rotation) instead of a yaw-only rotation
+    are new. The same "close on contact, not just estimated width"
+    (close_gripper_until_contact) and "stop-on-stall counts as success for
+    a descend/contact move" (move_to_pose's stop_on_stall) rules from the
+    top-down version apply here for exactly the same physical reason —
+    the horizontal approach and the vertical place-descend are both
+    "drive toward a surface until you touch it" moves.
+    """
+    result = ExecutionResult()
+
+    def to_world(pos_robot):
+        return base_pos + base_mat @ pos_robot
+
+    def R_world_of(pose):
+        return base_mat @ pose.R
+
+    pregrasp_stages = [
+        ("safe_high", plan.safe_high, GRIPPER_OPEN, False, True),
+        ("side_pregrasp", plan.pregrasp, GRIPPER_OPEN, False, True),
+        ("side_approach", plan.grasp, GRIPPER_OPEN, True, False),
+    ]
+    for name, pose, grip, allow_stall, interp in pregrasp_stages:
+        R_world = R_world_of(pose)
+        mover = move_to_pose_interpolated if interp else move_to_pose
+        stage = mover(env, to_world(pose.pos), R_world, base_mat,
+                       gripper_action=grip, step_callback=step_callback, stop_on_stall=allow_stall,
+                       **({"max_steps": max_steps_per_move} if not interp else {}))
+        stage.name = name
+        result.stages.append(stage)
+        if not stage.success:
+            result.failure_reason = f"{name}: failed to converge (pos_err={stage.final_pos_error:.4f})"
+            return result
+
+    close_stage = close_gripper_until_contact(env, step_callback=step_callback)
+    result.stages.append(close_stage)
+
+    post_grasp_stages = [
+        ("retreat", plan.retreat, GRIPPER_CLOSE, False, False),
+        ("lift", plan.lift, GRIPPER_CLOSE, False, False),
+        ("transport_to_place", plan.transport, GRIPPER_CLOSE, False, True),
+        ("descend_to_place", plan.place_descend, GRIPPER_CLOSE, True, False),
+    ]
+    for name, pose, grip, allow_stall, interp in post_grasp_stages:
+        R_world = R_world_of(pose)
+        mover = move_to_pose_interpolated if interp else move_to_pose
+        stage = mover(env, to_world(pose.pos), R_world, base_mat,
+                       gripper_action=grip, step_callback=step_callback, stop_on_stall=allow_stall,
+                       **({"max_steps": max_steps_per_move} if not interp else {}))
+        stage.name = name
+        result.stages.append(stage)
+        if not stage.success:
+            result.failure_reason = f"{name}: failed to converge (pos_err={stage.final_pos_error:.4f})"
+            return result
+
+    open_stage = open_gripper(env, step_callback=step_callback)
+    result.stages.append(open_stage)
+
+    retract_pose = plan.transport  # back up to the same high point above the tray
+    R_world = R_world_of(retract_pose)
+    retract_stage = move_to_pose(env, to_world(retract_pose.pos), R_world, base_mat,
+                                  gripper_action=GRIPPER_OPEN, max_steps=max_steps_per_move,
+                                  step_callback=step_callback, stop_on_stall=True)
+    retract_stage.name = "retract"
+    result.stages.append(retract_stage)
+
+    result.success = True
+    return result
+
+
 if __name__ == "__main__":
     import robosuite.macros as macros
     macros.IMAGE_CONVENTION = "opencv"

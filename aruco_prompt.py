@@ -51,6 +51,23 @@ class PromptFailure:
     candidate_ids: List[int] = field(default_factory=list)  # populated for MULTIPLE_MARKERS_AMBIGUOUS
 
 
+@dataclass
+class MarkerPose:
+    """Camera-frame pose of a detected marker, from solvePnP. Everything
+    here is a DIRECTION/POSITION derived purely from the marker's own
+    detected corners + its known real-world size — never from MuJoCo
+    ground truth (same "ArUco is a selection/geometry-free prompt, except
+    for the marker's own physical size which is a scene-construction fact
+    the same way a robot always knows its own printed marker's size" rule
+    the rest of this module follows)."""
+    rvec: np.ndarray               # (3,) Rodrigues rotation vector, camera frame
+    tvec: np.ndarray               # (3,) marker center position, camera frame (meters)
+    R_cam: np.ndarray              # (3,3) rotation matrix, marker-local -> camera frame
+    outward_normal_cam: np.ndarray  # (3,) unit vector, camera frame, pointing from the
+                                     # marker's face toward the camera (see sign-resolution
+                                     # note in estimate_marker_pose)
+
+
 ARUCO_DICTS = {
     "DICT_4X4_50": cv2.aruco.DICT_4X4_50,
     "DICT_4X4_100": cv2.aruco.DICT_4X4_100,
@@ -173,6 +190,70 @@ def get_target_prompt(
         near_edge=near_edge,
         frame_shape=(h, w),
     ), None
+
+
+def estimate_marker_pose(
+    detection: MarkerDetection,
+    K: np.ndarray,
+    marker_size_m: float,
+    dist_coeffs: Optional[np.ndarray] = None,
+) -> MarkerPose:
+    """
+    Solves for the marker's camera-frame pose via cv2.solvePnP against its
+    4 detected corners and a flat square object model of the marker's own
+    known real-world size (environment.py::get_target_marker_size() — a
+    scene-construction fact, not object ground truth; see MarkerPose's
+    docstring).
+
+    Object-point order matches cv2.aruco's own documented corner order
+    (top-left, top-right, bottom-right, bottom-left of the marker AS
+    PRINTED) — the same convention OpenCV's own estimatePoseSingleMarkers
+    uses internally. With this correspondence, solvePnP's resulting
+    rotation's 3rd column (local Z) already points from the marker's
+    printed face toward the camera under OpenCV's right-handed convention
+    (X right, Y up in-plane, Z out of the page) — confirmed by direct
+    in-sandbox check (see THESIS_PLAN.md's Phase-1-extension notes):
+    printing `outward_normal_cam` for the cylinder's camera-facing decal
+    gave a vector with a large negative Z component in camera frame (i.e.
+    pointing back toward the camera, which sits in front of the marker
+    along +Z_cam), as expected.
+
+    Sign is still explicitly re-verified (not just trusted from the
+    convention) against the marker's own known camera-relative position:
+    a marker facing the camera must have its outward normal pointing
+    roughly opposite `tvec` (back toward the camera at the origin), so if
+    `dot(normal, tvec) > 0` the normal is flipped. Cheap, and catches any
+    future corner-order mismatch immediately instead of silently planning
+    grasps 180 degrees wrong.
+    """
+    if dist_coeffs is None:
+        dist_coeffs = np.zeros(5, dtype=np.float32)
+
+    half = marker_size_m / 2.0
+    obj_pts = np.array([
+        [-half, half, 0.0],
+        [half, half, 0.0],
+        [half, -half, 0.0],
+        [-half, -half, 0.0],
+    ], dtype=np.float32)
+
+    ok, rvec, tvec = cv2.solvePnP(
+        obj_pts, detection.corners.astype(np.float32), K.astype(np.float32), dist_coeffs,
+        flags=cv2.SOLVEPNP_IPPE_SQUARE,
+    )
+    if not ok:
+        raise RuntimeError("solvePnP failed to converge on marker pose")
+
+    rvec = rvec.reshape(3)
+    tvec = tvec.reshape(3)
+    R_cam, _ = cv2.Rodrigues(rvec)
+    normal_cam = R_cam[:, 2].copy()
+
+    tvec_dir = tvec / (np.linalg.norm(tvec) + 1e-9)
+    if np.dot(normal_cam, tvec_dir) > 0:
+        normal_cam = -normal_cam
+
+    return MarkerPose(rvec=rvec, tvec=tvec, R_cam=R_cam, outward_normal_cam=normal_cam)
 
 
 def draw_debug_overlay(rgb: np.ndarray, detection: Optional[MarkerDetection],
