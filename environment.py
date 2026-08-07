@@ -310,7 +310,7 @@ class PickPlaceEnv(ManipulationEnv):
         object side surfaces (for bottles) and part of the top surface.
         """
         table_center = self.table_offset
-        cam_offset = np.array([-0.45, -0.45, 0.55])
+        cam_offset = self._CAMERA_XY_OFFSET_3D
         cam_pos = table_center + cam_offset
         look_target = table_center + np.array([0.0, 0.0, 0.05])
         quat = look_at_quat(cam_pos, look_target)
