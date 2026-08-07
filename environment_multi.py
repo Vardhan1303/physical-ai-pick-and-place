@@ -133,6 +133,21 @@ class PrismObject(PrimitiveObject):
                  density=None, friction=None, solref=None, solimp=None,
                  material=None, joints="default", obj_type="all",
                  duplicate_collision_geoms=True):
+        # Geometry facts needed by the marker-decal placement code
+        # (environment_multi.py's own _add_prism_decal), same category as
+        # CylinderObject exposing self.size[0]/[1] for its own decal code.
+        # Set BEFORE calling super().__init__() below, since
+        # MujocoGeneratedObject.__init__ calls self._get_object_subtree()
+        # (which needs these) as its very last step.
+        self.circumradius = circumradius
+        self.half_height = half_height
+        self.front_azimuth = front_azimuth
+        # Apothem of the front face (distance from axis to the face
+        # plane) — see module docstring's equilateral-triangle trig.
+        self.front_apothem = 0.5 * circumradius
+        self.front_face_half_width = 0.5 * (circumradius * np.sqrt(3.0))
+        self._mesh_name = None  # finalized (prefixed) inside _get_object_subtree
+
         super().__init__(
             name=name,
             size=[circumradius, half_height, front_azimuth],
@@ -141,33 +156,19 @@ class PrismObject(PrimitiveObject):
             joints=joints, obj_type=obj_type,
             duplicate_collision_geoms=duplicate_collision_geoms,
         )
-        verts = _prism_vertices(circumradius, half_height, front_azimuth)
-        # Manually prefixed (self.naming_prefix is already available at
-        # this point — set at the very start of PrimitiveObject.__init__)
-        # rather than relying on add_prefix's automatic pass, exactly the
-        # same trick environment.py::_add_aruco_decal already uses for its
-        # marker material, since this mesh is appended to self.asset
-        # directly rather than through append_material (which only knows
-        # about texture/material elements, not meshes).
-        self._mesh_name = self.naming_prefix + "prism_mesh"
-        mesh_el = new_element(tag="mesh", name=self._mesh_name, vertex=array_to_string(verts.flatten()))
-        self.asset.append(mesh_el)
-
-        # Geometry facts needed by the marker-decal placement code
-        # (environment_multi.py's own _add_face_decal), same category as
-        # CylinderObject exposing self.size[0]/[1] for its own decal code.
-        self.circumradius = circumradius
-        self.half_height = half_height
-        self.front_azimuth = front_azimuth
-        # Apothem of the front face (distance from axis to the face
-        # plane) — see module docstring's equilateral-triangle trig.
-        self.front_apothem = 0.5 * circumradius
-        self.front_face_half_width = 0.5 * (circumradius * np.sqrt(3.0))
 
     def sanity_check(self):
         assert len(self.size) == 3, "prism size should be (circumradius, half_height, front_azimuth)"
 
     def _get_object_subtree(self):
+        # Called once, from within MujocoGeneratedObject.__init__, after
+        # self._name (and therefore self.naming_prefix) is already set —
+        # build and register the inline convex-hull mesh asset here rather
+        # than in __init__ proper (see __init__'s comment on ordering).
+        verts = _prism_vertices(self.circumradius, self.half_height, self.front_azimuth)
+        self._mesh_name = self.naming_prefix + "prism_mesh"
+        self.asset.append(new_element(tag="mesh", name=self._mesh_name, vertex=array_to_string(verts.flatten())))
+
         obj = new_element(tag="body", name="main")
         common = {"mesh": self._mesh_name, "pos": array_to_string([0, 0, 0])}
         if self.obj_type in {"collision", "all"}:
@@ -351,7 +352,7 @@ class MultiObjectPickPlaceEnv(PickPlaceEnv):
         decal_local_z = height_above_base - half_length
         decal_pos = [decal_r * np.cos(camera_azimuth), decal_r * np.sin(camera_azimuth), decal_local_z]
         cyl_obj._obj.append(new_element(
-            tag="geom", name="target_marker_decal", type="box",
+            tag="geom", name=f"target_marker_decal_{marker_id}", type="box",
             size=array_to_string([decal_half, decal_half, 0.0005]),
             pos=array_to_string(decal_pos), quat=array_to_string(decal_quat),
             group="1", material=prefixed_mat, contype="0", conaffinity="0",
@@ -370,7 +371,7 @@ class MultiObjectPickPlaceEnv(PickPlaceEnv):
         decal_r = radius + 0.0006
         decal_pos = [decal_r * np.cos(camera_azimuth), decal_r * np.sin(camera_azimuth), 0.0]
         ball_obj._obj.append(new_element(
-            tag="geom", name="target_marker_decal", type="box",
+            tag="geom", name=f"target_marker_decal_{marker_id}", type="box",
             size=array_to_string([decal_half, decal_half, 0.0005]),
             pos=array_to_string(decal_pos), quat=array_to_string(decal_quat),
             group="1", material=prefixed_mat, contype="0", conaffinity="0",
@@ -399,7 +400,7 @@ class MultiObjectPickPlaceEnv(PickPlaceEnv):
         decal_r = half_extent_along_normal + 0.0006
         decal_pos = [decal_r * np.cos(face_azimuth), decal_r * np.sin(face_azimuth), 0.0]
         box_obj._obj.append(new_element(
-            tag="geom", name="target_marker_decal", type="box",
+            tag="geom", name=f"target_marker_decal_{marker_id}", type="box",
             size=array_to_string([decal_half, decal_half, 0.0005]),
             pos=array_to_string(decal_pos), quat=array_to_string(decal_quat),
             group="1", material=prefixed_mat, contype="0", conaffinity="0",
@@ -415,7 +416,7 @@ class MultiObjectPickPlaceEnv(PickPlaceEnv):
         decal_r = prism_obj.front_apothem + 0.0006
         decal_pos = [decal_r * np.cos(az), decal_r * np.sin(az), 0.0]
         prism_obj._obj.append(new_element(
-            tag="geom", name="target_marker_decal", type="box",
+            tag="geom", name=f"target_marker_decal_{marker_id}", type="box",
             size=array_to_string([decal_half, decal_half, 0.0005]),
             pos=array_to_string(decal_pos), quat=array_to_string(decal_quat),
             group="1", material=prefixed_mat, contype="0", conaffinity="0",
