@@ -4,7 +4,7 @@
 
 `environment.py`, `aruco_prompt.py`, `flip_segmenter.py`, `geometry.py`, `grasp_planner.py`, `robot_controller.py`, `pipeline.py`, and `evaluation.py` are all written and independently verified, including a full closed-loop run: real ArUco detection -> real FLIP ONNX segmentation (with the actual `flip_position` C extension built and running, not stubbed) -> depth-based point cloud -> grasp planning -> real robosuite OSC_POSE execution on the Panda -> the object physically placed in the destination bin. See `README_thesis.md` for how to run each phase, expected output, known limitations, and troubleshooting (several real bugs were found and fixed while building this — grayscale-PNG texture loading, MuJoCo 2D-texture face mapping, a mujoco/robosuite version incompatibility, a quaternion double-cover control bug, an unreachable-wrist grasp yaw, and a bin-height/release-point calculation error — each documented at its fix site and summarized in the README's troubleshooting section).
 
-Replaces the earlier raw-MuJoCo-XML pick-and-place demo in this repo (`pick_and_place_flip.py`, `manipulation.py`, `ik_utils.py`, `shape_utils.py`, `assets/`) with a robosuite-based architecture built for the research question below. The old files are left in place (not deleted) since this repo's mounted-folder policy requires explicit permission before deletion; they coexist at the repo root because none of the 8 new module names collide with them. The one real conflict found — dependency versions — is handled with a separate `requirements_thesis.txt` and a separate virtualenv (see below), not a subfolder.
+Replaces the earlier raw-MuJoCo-XML pick-and-place demo that used to live in this repo (`pick_and_place_flip.py`, `manipulation.py`, `ik_utils.py`, `shape_utils.py`, `assets/`) with a robosuite-based architecture built for the research question below. That old pipeline has since been removed from the repo entirely — it is fully superseded, not kept alongside this one. See `README.md` for installation and usage.
 
 **Research question:** Can an ArUco-derived point prompt allow FLIP to segment previously unseen tabletop objects accurately enough for closed-loop RGB-D robotic grasping, compared with a category-trained YOLO segmentation baseline?
 
@@ -14,9 +14,9 @@ Replaces the earlier raw-MuJoCo-XML pick-and-place demo in this repo (`pick_and_
 
 ```
 physical-ai-pick-and-place/
-├── requirements.txt              # OLD pipeline's deps (mujoco==3.11.0) — untouched
-├── requirements_thesis.txt       # NEW pipeline's deps (mujoco==3.3.0) — separate venv, see file header
+├── requirements.txt              # pipeline deps (mujoco==3.3.0 pinned, see file header)
 ├── THESIS_PLAN.md                # this document
+├── README.md                     # installation, usage, results, credits
 │
 ├── environment.py                # Phase 1 — DONE, verified in-sandbox
 ├── aruco_prompt.py               # Phase 2
@@ -27,24 +27,18 @@ physical-ai-pick-and-place/
 ├── pipeline.py                   # Phase 7 (orchestrates 1-6)
 ├── evaluation.py                 # Phase 7/8 (ground truth, metrics)
 │
-├── phase1_output/                # environment.py's self-test artifacts (rgb/depth)
 ├── runs/                         # pipeline.py output: per-run video + stage images (created at runtime)
 ├── eval_results/                 # evaluation.py output: CSV + plots (created at runtime)
 │
 ├── segment.py                    # EXISTING — FlipSegmenter wrapper, reused by flip_segmenter.py
-├── pick_and_place_flip.py        # OLD pipeline — untouched
-├── manipulation.py               # OLD pipeline — untouched
-├── ik_utils.py                   # OLD pipeline — untouched
-├── shape_utils.py                # OLD pipeline — untouched
-├── watch_live.py                 # OLD pipeline — untouched
-└── assets/                       # OLD pipeline's MJCF scene — untouched
+└── markers/                      # ArUco marker image(s) used by the scene
 ```
 
 Each of the 8 new modules is independently importable and testable (per the constraint that every module must be independently testable) — none of them do `if __name__ == "__main__": run_everything()`; each has its own minimal self-test block instead, following `environment.py`'s pattern.
 
 ## 2. Dependency list
 
-See `requirements_thesis.txt` (written alongside this plan). Headline finding: robosuite 1.5.2's OSC controller breaks on MuJoCo ≥ ~3.9 (`AttributeError: 'MjData' object has no attribute 'qM'` — the attribute was renamed to `.M`), reproduced directly in-sandbox. Pin `mujoco==3.3.0` for this pipeline; use a separate virtualenv from the old pipeline's `mujoco==3.11.0`.
+See `requirements.txt`. Headline finding: robosuite 1.5.2's OSC controller breaks on MuJoCo ≥ ~3.9 (`AttributeError: 'MjData' object has no attribute 'qM'` — the attribute was renamed to `.M`), reproduced directly in-sandbox. Pin `mujoco==3.3.0` for this pipeline.
 
 ## 3. Implementation plan
 
@@ -94,7 +88,7 @@ Written and verified: `environment.py` (see repo root). Self-test block at the b
 
 ## 5. Verification instructions (do this before starting Phase 2)
 
-1. **Separate environment.** Create a fresh virtualenv and `pip install -r requirements_thesis.txt`. Do not reuse the old pipeline's environment (mujoco version conflict, see above).
+1. **Fresh environment.** Create a virtualenv and `pip install -r requirements.txt` (note the `mujoco==3.3.0` pin, see above).
 2. **Run the self-test:** `python environment.py` from the repo root. Expect it to print RGB shape `(480, 640, 3)`, a depth min/max in a physically sane range (roughly 0.3-5m for this scene), a 3x3 intrinsics matrix, and a 4x4 extrinsics matrix — then `Saved phase1_output/side_oblique_rgb.png and side_oblique_depth.npy`.
 3. **Visually inspect `phase1_output/side_oblique_rgb.png`.** You should see: the table surface, the red target box standing on it, the gray destination bin, and the Panda gripper entering frame from the upper-left — all right-side-up. (This caught a real bug during development: without `robosuite.macros.IMAGE_CONVENTION = "opencv"`, the same scene renders vertically flipped — table underside "up", objects appearing to float against a bright void. If your image looks like that, the macro isn't taking effect before env construction.)
 4. **Elevation sanity check:** the camera should be looking down at roughly 35-50° above the table plane — enough to see both the target box's front face and part of its top face in the same frame (confirm both are visible in the saved image).
