@@ -1,0 +1,77 @@
+[
+  {
+    "stage": "reset",
+    "ok": true,
+    "detail": "env reset + 30 settle steps, seed=externally-constructed env"
+  },
+  {
+    "stage": "capture",
+    "ok": true,
+    "detail": "rgb=(720, 960, 3) depth_range=(0.412,4.609)m"
+  },
+  {
+    "stage": "aruco_prompt",
+    "ok": true,
+    "detail": "marker_id=42 center=(316.25, 366.5) side_px=20.9 near_edge=False"
+  },
+  {
+    "stage": "flip_segmenter",
+    "ok": true,
+    "detail": "mask_px=4451 confidence=0.873 roi_bbox=(268, 318, 364, 414)"
+  },
+  {
+    "stage": "geometry",
+    "ok": true,
+    "detail": "n_raw=4451 n_valid_depth=4451 n_final=1367 table_plane_found=True"
+  },
+  {
+    "stage": "grasp_planner",
+    "ok": true,
+    "detail": "grasp_width=0.0486m yaw=15.7deg grasp_pos=[ 0.45682526  0.12879461 -0.04995074]"
+  },
+  {
+    "stage": "robot_controller:pregrasp",
+    "ok": true,
+    "detail": "steps=7 pos_err=0.0037 rot_err=0.0120"
+  },
+  {
+    "stage": "robot_controller:descend_to_grasp",
+    "ok": true,
+    "detail": "steps=16 pos_err=0.0058 rot_err=0.0233"
+  },
+  {
+    "stage": "robot_controller:close_gripper",
+    "ok": true,
+    "detail": "steps=18 pos_err=0.0000 rot_err=0.0000"
+  },
+  {
+    "stage": "robot_controller:lift",
+    "ok": true,
+    "detail": "steps=16 pos_err=0.0040 rot_err=0.0070"
+  },
+  {
+    "stage": "robot_controller:transport_to_place",
+    "ok": true,
+    "detail": "steps=10 pos_err=0.0047 rot_err=0.0050"
+  },
+  {
+    "stage": "robot_controller:descend_to_place",
+    "ok": true,
+    "detail": "steps=25 pos_err=0.0592 rot_err=0.0111 [stopped_by_contact]"
+  },
+  {
+    "stage": "robot_controller:open_gripper",
+    "ok": true,
+    "detail": "steps=40 pos_err=0.0000 rot_err=0.0000"
+  },
+  {
+    "stage": "robot_controller:retract",
+    "ok": true,
+    "detail": "steps=31 pos_err=0.0079 rot_err=0.0333 [stopped_by_contact]"
+  },
+  {
+    "stage": "outcome_check",
+    "ok": true,
+    "detail": "pos_before=[-0.09467973  0.11842158  0.84913555] pos_after=[ 0.23691126 -0.00343997  0.9067403 ] in_bin_xy=True controller_success=True"
+  }
+]

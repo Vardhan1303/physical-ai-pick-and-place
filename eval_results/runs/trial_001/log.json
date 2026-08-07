@@ -1,0 +1,77 @@
+[
+  {
+    "stage": "reset",
+    "ok": true,
+    "detail": "env reset + 30 settle steps, seed=externally-constructed env"
+  },
+  {
+    "stage": "capture",
+    "ok": true,
+    "detail": "rgb=(720, 960, 3) depth_range=(0.419,4.609)m"
+  },
+  {
+    "stage": "aruco_prompt",
+    "ok": true,
+    "detail": "marker_id=42 center=(559.75, 381.5) side_px=20.8 near_edge=False"
+  },
+  {
+    "stage": "flip_segmenter",
+    "ok": true,
+    "detail": "mask_px=4508 confidence=0.965 roi_bbox=(511, 333, 607, 429)"
+  },
+  {
+    "stage": "geometry",
+    "ok": true,
+    "detail": "n_raw=4508 n_valid_depth=4508 n_final=1272 table_plane_found=True"
+  },
+  {
+    "stage": "grasp_planner",
+    "ok": true,
+    "detail": "grasp_width=0.0474m yaw=-4.2deg grasp_pos=[ 0.60235631 -0.04376706 -0.04979846]"
+  },
+  {
+    "stage": "robot_controller:pregrasp",
+    "ok": true,
+    "detail": "steps=7 pos_err=0.0040 rot_err=0.0030"
+  },
+  {
+    "stage": "robot_controller:descend_to_grasp",
+    "ok": true,
+    "detail": "steps=30 pos_err=0.0096 rot_err=0.0012 [stopped_by_contact]"
+  },
+  {
+    "stage": "robot_controller:close_gripper",
+    "ok": true,
+    "detail": "steps=19 pos_err=0.0000 rot_err=0.0000"
+  },
+  {
+    "stage": "robot_controller:lift",
+    "ok": true,
+    "detail": "steps=17 pos_err=0.0049 rot_err=0.0070"
+  },
+  {
+    "stage": "robot_controller:transport_to_place",
+    "ok": true,
+    "detail": "steps=9 pos_err=0.0033 rot_err=0.0032"
+  },
+  {
+    "stage": "robot_controller:descend_to_place",
+    "ok": true,
+    "detail": "steps=27 pos_err=0.0632 rot_err=0.0023 [stopped_by_contact]"
+  },
+  {
+    "stage": "robot_controller:open_gripper",
+    "ok": true,
+    "detail": "steps=40 pos_err=0.0000 rot_err=0.0000"
+  },
+  {
+    "stage": "robot_controller:retract",
+    "ok": true,
+    "detail": "steps=25 pos_err=0.0079 rot_err=0.0334 [stopped_by_contact]"
+  },
+  {
+    "stage": "outcome_check",
+    "ok": true,
+    "detail": "pos_before=[ 0.04755737 -0.05493167  0.84914659] pos_after=[ 2.32718929e-01 -8.71835468e-04  9.07299081e-01] in_bin_xy=True controller_success=True"
+  }
+]
