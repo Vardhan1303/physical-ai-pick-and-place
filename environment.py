@@ -35,8 +35,11 @@ Run directly to sanity-check the scene (Phase 1 deliverable — see the
 verification steps in the project plan):
     python environment.py
 """
+import os
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
+import cv2
 import numpy as np
 import mujoco
 
@@ -55,11 +58,48 @@ from robosuite.environments.manipulation.manipulation_env import ManipulationEnv
 from robosuite.models.arenas import TableArena
 from robosuite.models.objects import BoxObject
 from robosuite.models.tasks import ManipulationTask
-from robosuite.utils.mjcf_utils import CustomMaterial
+from robosuite.utils.mjcf_utils import CustomMaterial, new_geom
 from robosuite.utils.placement_samplers import UniformRandomSampler
 from robosuite.utils import camera_utils
 
 SIDE_CAMERA_NAME = "side_oblique_camera"
+
+# Shared with the perception side (aruco_prompt.py) so both sides agree on
+# what dictionary/ID they're looking for. DICT_6X6_250 matches what the
+# existing pipeline (segment.py, pick_and_place_flip.py) already uses.
+ARUCO_DICT_NAME = "DICT_6X6_250"
+TARGET_MARKER_ID = 42  # arbitrary, chosen distinct from the old pipeline's marker IDs (0/1/2)
+
+MARKERS_DIR = Path(__file__).resolve().parent / "markers"
+
+
+def ensure_marker_png(marker_id: int, dict_name: str = ARUCO_DICT_NAME,
+                       marker_px: int = 200, quiet_zone_px: int = 40) -> str:
+    """
+    Generates (idempotently) a printable ArUco marker PNG with a white
+    quiet-zone border — required for reliable cv2.aruco detection, the
+    marker pattern alone isn't enough. Returns the absolute file path.
+    Cached under markers/ so repeated env construction doesn't regenerate it.
+    """
+    MARKERS_DIR.mkdir(parents=True, exist_ok=True)
+    path = MARKERS_DIR / f"target_marker_id{marker_id}.png"
+    if path.exists():
+        return str(path)
+
+    aruco_dict = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, dict_name))
+    pattern = cv2.aruco.generateImageMarker(aruco_dict, marker_id, marker_px, borderBits=1)
+    canvas = np.full(
+        (marker_px + 2 * quiet_zone_px, marker_px + 2 * quiet_zone_px), 255, dtype=np.uint8
+    )
+    canvas[quiet_zone_px:quiet_zone_px + marker_px, quiet_zone_px:quiet_zone_px + marker_px] = pattern
+    # MuJoCo's texture loader needs RGB, not single-channel grayscale — a
+    # grayscale PNG loaded silently as a flat gray face (no error, no
+    # pattern) rather than failing loudly. Hit and fixed in-sandbox: the
+    # marker rendered as a uniform gray patch until this 3-channel convert
+    # was added.
+    canvas_rgb = cv2.cvtColor(canvas, cv2.COLOR_GRAY2BGR)
+    cv2.imwrite(str(path), canvas_rgb)
+    return str(path)
 
 
 def look_at_quat(cam_pos, target, world_up=(0, 0, 1)):
@@ -111,13 +151,14 @@ class PickPlaceEnv(ManipulationEnv):
         table_friction=(1.0, 5e-3, 1e-4),
         num_distractors=0,
         target_object_size=(0.025, 0.025, 0.05),
+        randomize_object_rotation=False,
         use_camera_obs=True,
         has_renderer=False,
         has_offscreen_renderer=True,
         render_camera=SIDE_CAMERA_NAME,
         camera_names=None,
-        camera_heights=480,
-        camera_widths=640,
+        camera_heights=720,
+        camera_widths=960,
         camera_depths=True,
         camera_segmentations=None,
         control_freq=20,
@@ -132,6 +173,14 @@ class PickPlaceEnv(ManipulationEnv):
         self.table_offset = np.array((0, 0, 0.8))
         self.num_distractors = num_distractors
         self.target_object_size = target_object_size
+        # The target has a single ArUco decal on one face (see
+        # _add_aruco_decal). A full random yaw would rotate that face away
+        # from the camera unpredictably, which is fine for Phase 7's
+        # occlusion/robustness sweeps (where failure to see the marker is
+        # itself a measured outcome) but wrong for Phases 1-6, which need
+        # the marker reliably visible while the rest of the pipeline is
+        # built and debugged. Default: fixed yaw=0 (decal faces the camera).
+        self.randomize_object_rotation = randomize_object_rotation
         self.placement_initializer = None
 
         if camera_names is None:
@@ -192,6 +241,7 @@ class PickPlaceEnv(ManipulationEnv):
             material=target_material,
             rng=self.rng,
         )
+        self._add_aruco_decal(self.target_object)
 
         self.distractor_objects = []
         distractor_colors = [[0.2, 0.6, 0.8, 1], [0.3, 0.75, 0.35, 1], [0.85, 0.7, 0.2, 1]]
@@ -212,7 +262,7 @@ class PickPlaceEnv(ManipulationEnv):
             mujoco_objects=all_movable,
             x_range=[-0.12, 0.12],
             y_range=[-0.15, 0.15],
-            rotation=None,
+            rotation=None if self.randomize_object_rotation else 0,
             ensure_object_boundary_in_range=True,
             ensure_valid_placement=True,
             reference_pos=self.table_offset,
@@ -230,8 +280,17 @@ class PickPlaceEnv(ManipulationEnv):
             joints=None,
         )
         bin_body = self.bin_object.get_obj()
+        bin_half_size = np.array([0.09, 0.09, 0.015])
         bin_pos = self.table_offset + np.array([0.22, 0.0, self.table_full_size[2] / 2 + 0.016])
         bin_body.set("pos", " ".join(str(v) for v in bin_pos))
+        # Stored for get_bin_top_center() — fixed scene furniture (like a
+        # camera mount point), not per-object ground truth, so grasp_planner.py
+        # /pipeline.py may legitimately read this instead of re-deriving the
+        # bin's placement arithmetic by hand (a real bug hit during Phase 6
+        # verification: a hand-copied version of this formula in a self-test
+        # accidentally double-counted the table's half-thickness).
+        self._bin_pos = bin_pos
+        self._bin_half_size = bin_half_size
 
         self.model = ManipulationTask(
             mujoco_arena=mujoco_arena,
@@ -260,6 +319,77 @@ class PickPlaceEnv(ManipulationEnv):
         camera.set("pos", " ".join(str(v) for v in cam_pos))
         camera.set("quat", " ".join(str(v) for v in quat))
         camera.set("fovy", "45")
+
+    def _add_aruco_decal(self, box_obj: BoxObject):
+        """
+        Attaches an ArUco marker as a thin decal geom on the target's -Y
+        face (the face pointing toward side_oblique_camera, given the
+        camera's [-0.45,-0.45,...] offset and the fixed yaw=0 placement —
+        confirmed by direct render, see THESIS_PLAN.md's Phase 2 notes).
+
+        Mechanism: `box_obj._obj` is the real ET.Element robosuite's own
+        `PrimitiveObject._get_object_subtree_` builds for this object (see
+        robosuite/models/objects/generated_objects.py) — appending a geom
+        to it directly, before the object is merged into ManipulationTask,
+        is the same thing robosuite's own per-instance naming-prefix pass
+        (`add_prefix`) expects to walk over; it isn't a private workaround,
+        it's the one mutation point robosuite exposes before assembly.
+        Mirrors the old raw-MuJoCo pipeline's marker-sticker geom pattern
+        (thin flush box, own material, contype=0/conaffinity=0 — visual
+        only, no physics interaction) rather than inventing a new approach.
+        """
+        marker_path = ensure_marker_png(TARGET_MARKER_ID, ARUCO_DICT_NAME)
+        marker_material = CustomMaterial(
+            texture=marker_path,
+            tex_name="target_marker_tex",
+            mat_name="target_marker_mat",
+            tex_attrib={"type": "2d"},
+            mat_attrib={"specular": "0", "shininess": "0"},
+        )
+        box_obj.append_material(marker_material)
+        # append_material() immediately re-runs robosuite's own add_prefix()
+        # over box_obj.asset (see objects.py::append_material), so the
+        # material we just added is now named f"{naming_prefix}target_marker_mat",
+        # not the bare "target_marker_mat" we passed to CustomMaterial. That
+        # prefixing pass only touches .asset, not .obj — and the ONE pass
+        # that does prefix .obj's geoms already ran earlier, during
+        # BoxObject.__init__ (_get_object_properties), before this decal
+        # geom existed. So the decal must reference the already-prefixed
+        # name directly, or MuJoCo's XML compiler fails with "material ...
+        # not found" (hit and fixed while verifying this in-sandbox).
+        prefixed_mat_name = box_obj.naming_prefix + "target_marker_mat"
+
+        half_x, half_y, half_z = box_obj.size
+        decal_half = 0.8 * min(half_x, half_y)  # decal smaller than the face it sits on
+        # On the TOP face (thin along Z), not a side face. Two things had
+        # to be confirmed in-sandbox before landing here:
+        #   1. A grayscale-only PNG silently renders as flat gray (no
+        #      pattern, no error) — MuJoCo's texture loader needs RGB.
+        #      Fixed in ensure_marker_png (cv2.COLOR_GRAY2BGR convert).
+        #   2. Even with an RGB PNG, a decal thin-along-Y (flush against a
+        #      SIDE face) still rendered flat gray, while a direct
+        #      side-by-side test of the OLD raw-MuJoCo pipeline's marker
+        #      geoms (thin-along-Z, on the TOP face, same DICT_6X6_250,
+        #      same MUJOCO_GL=glx software renderer) rendered its pattern
+        #      correctly and detected via cv2.aruco with no changes. So the
+        #      2D-texture-on-a-box mapping in this MuJoCo build only
+        #      resolves correctly for the face normal to local Z — side
+        #      faces don't get a usable UV mapping. Since
+        #      side_oblique_camera is elevated ~40deg (not purely
+        #      side-on), the top face is legitimately visible from it, so
+        #      this isn't a workaround so much as adopting the one
+        #      orientation actually proven to render/detect correctly.
+        decal = new_geom(
+            name="target_marker_decal",
+            type="box",
+            size=[decal_half, decal_half, 0.0005],
+            pos=[0, 0, half_z + 0.0006],
+            group=1,
+            material=prefixed_mat_name,
+            contype=0,
+            conaffinity=0,
+        )
+        box_obj._obj.append(decal)
 
     def _setup_references(self):
         super()._setup_references()
@@ -305,6 +435,23 @@ class PickPlaceEnv(ManipulationEnv):
         since the Panda's base is welded into the world at a known offset)."""
         return camera_utils.get_camera_extrinsic_matrix(self.sim, camera_name)
 
+    def get_table_height(self) -> float:
+        """World-frame Z of the table's top surface — fixed scene geometry
+        (same category as a camera mount point), not object ground truth.
+        For use by geometry.py/grasp_planner.py as a plane-fit/height hint."""
+        return float(self.table_offset[2] + self.table_full_size[2] / 2)
+
+    def get_bin_top_center(self) -> np.ndarray:
+        """World-frame XYZ of the destination bin's top surface center —
+        fixed scene furniture, legitimate for grasp_planner.py/pipeline.py
+        to read directly instead of re-deriving the bin's placement
+        arithmetic by hand (a real bug: a hand-copied version of this
+        formula in an early self-test double-counted the table's
+        half-thickness, producing a release height ~2cm off and causing
+        the place-descend motion to fail to converge against the bin's
+        actual solid geometry)."""
+        return self._bin_pos + np.array([0.0, 0.0, self._bin_half_size[2]])
+
     # ------------------------------------------------------------------
     # EVALUATION-ONLY ground truth. Do not call from aruco_prompt.py,
     # flip_segmenter.py, geometry.py, or grasp_planner.py.
@@ -338,8 +485,8 @@ if __name__ == "__main__":
         has_offscreen_renderer=True,
         use_camera_obs=True,
         camera_names=[SIDE_CAMERA_NAME],
-        camera_heights=480,
-        camera_widths=640,
+        camera_heights=720,
+        camera_widths=960,
         camera_depths=True,
         num_distractors=0,
         seed=0,
