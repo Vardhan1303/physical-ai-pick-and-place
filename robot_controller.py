@@ -347,7 +347,8 @@ def execute_grasp_plan(env, plan, base_pos: np.ndarray, base_mat: np.ndarray,
 
 
 def execute_side_grasp_plan(env, plan, base_pos: np.ndarray, base_mat: np.ndarray,
-                             step_callback=None, max_steps_per_move: int = 200) -> ExecutionResult:
+                             step_callback=None, max_steps_per_move: int = 200,
+                             n_waypoints: int = 10, max_steps_per_waypoint: int = 150) -> ExecutionResult:
     """
     Runs the HORIZONTAL side-grasp sequence for one
     grasp_planner.SideGraspPlan: safe-high -> pregrasp -> horizontal
@@ -366,6 +367,18 @@ def execute_side_grasp_plan(env, plan, base_pos: np.ndarray, base_mat: np.ndarra
     top-down version apply here for exactly the same physical reason —
     the horizontal approach and the vertical place-descend are both
     "drive toward a surface until you touch it" moves.
+
+    `n_waypoints`/`max_steps_per_waypoint` default higher than
+    execute_grasp_plan's top-down interpolation (5 waypoints / 80 steps)
+    because side-grasp reconfigurations start much farther from the arm's
+    natural "reach down" home orientation — confirmed necessary
+    in-sandbox: the safe-high -> pregrasp descent (same orientation
+    throughout, position-only) still failed to converge within the
+    smaller default budget even though the orientation itself was already
+    achieved, apparently because holding a horizontal wrist orientation
+    while translating into the lower workspace needs a different
+    elbow/joint configuration that takes the controller more steps to
+    find than a purely-positional top-down move does.
     """
     result = ExecutionResult()
 
@@ -383,9 +396,11 @@ def execute_side_grasp_plan(env, plan, base_pos: np.ndarray, base_mat: np.ndarra
     for name, pose, grip, allow_stall, interp in pregrasp_stages:
         R_world = R_world_of(pose)
         mover = move_to_pose_interpolated if interp else move_to_pose
+        extra_kwargs = ({"n_waypoints": n_waypoints, "max_steps_per_waypoint": max_steps_per_waypoint}
+                         if interp else {"max_steps": max_steps_per_move})
         stage = mover(env, to_world(pose.pos), R_world, base_mat,
                        gripper_action=grip, step_callback=step_callback, stop_on_stall=allow_stall,
-                       **({"max_steps": max_steps_per_move} if not interp else {}))
+                       **extra_kwargs)
         stage.name = name
         result.stages.append(stage)
         if not stage.success:
@@ -404,9 +419,11 @@ def execute_side_grasp_plan(env, plan, base_pos: np.ndarray, base_mat: np.ndarra
     for name, pose, grip, allow_stall, interp in post_grasp_stages:
         R_world = R_world_of(pose)
         mover = move_to_pose_interpolated if interp else move_to_pose
+        extra_kwargs = ({"n_waypoints": n_waypoints, "max_steps_per_waypoint": max_steps_per_waypoint}
+                         if interp else {"max_steps": max_steps_per_move})
         stage = mover(env, to_world(pose.pos), R_world, base_mat,
                        gripper_action=grip, step_callback=step_callback, stop_on_stall=allow_stall,
-                       **({"max_steps": max_steps_per_move} if not interp else {}))
+                       **extra_kwargs)
         stage.name = name
         result.stages.append(stage)
         if not stage.success:
