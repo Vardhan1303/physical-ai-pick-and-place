@@ -423,6 +423,51 @@ class MultiObjectPickPlaceEnv(PickPlaceEnv):
         ))
         self._marker_id_to_marker_size[marker_id] = marker_size
 
+    def _reset_internal(self):
+        # ManipulationEnv._reset_internal (not PickPlaceEnv's — call it
+        # directly, skipping PickPlaceEnv._reset_internal's own single-shot
+        # sample() so we can retry below instead).
+        from robosuite.environments.manipulation.manipulation_env import ManipulationEnv
+        ManipulationEnv._reset_internal(self)
+        if self.deterministic_reset:
+            return
+
+        # UniformRandomSampler's own overlap check only rejects placements
+        # where two objects' (horizontal_radius) circles actually overlap
+        # — it happily returns objects sitting right next to each other,
+        # touching. That's fine for "no overlap" but not for "sufficient
+        # spacing for side grasping" / reliable marker visibility (an
+        # oblique camera can still have one object's body occlude a
+        # neighbor's marker even when their footprints don't overlap).
+        # Retry sampling and keep the first layout where every pair of
+        # object centers is at least (sum of horizontal radii + margin)
+        # apart — same effect as a margin parameter the sampler doesn't
+        # expose, cheaper than reimplementing the sampler.
+        margin = 0.035
+        best_placements = None
+        for _attempt in range(25):
+            placements = self.placement_initializer.sample()
+            items = list(placements.items())
+            ok = True
+            for i in range(len(items)):
+                _, (pos_i, _quat_i, obj_i) = items[i]
+                for j in range(i + 1, len(items)):
+                    _, (pos_j, _quat_j, obj_j) = items[j]
+                    min_dist = obj_i.horizontal_radius + obj_j.horizontal_radius + margin
+                    if np.linalg.norm(np.array(pos_i[:2]) - np.array(pos_j[:2])) < min_dist:
+                        ok = False
+                        break
+                if not ok:
+                    break
+            best_placements = placements
+            if ok:
+                break
+
+        for obj_pos, obj_quat, obj in best_placements.values():
+            self.sim.data.set_joint_qpos(
+                obj.joints[0], np.concatenate([np.array(obj_pos), np.array(obj_quat)])
+            )
+
     # ------------------------------------------------------------------
     def _load_model(self):
         # Widen the placement range vs PickPlaceEnv's single-object default
