@@ -1,0 +1,77 @@
+[
+  {
+    "stage": "reset",
+    "ok": true,
+    "detail": "env reset + 30 settle steps, seed=0"
+  },
+  {
+    "stage": "capture",
+    "ok": true,
+    "detail": "rgb=(720, 960, 3) depth_range=(0.410,4.609)m"
+  },
+  {
+    "stage": "aruco_prompt",
+    "ok": true,
+    "detail": "marker_id=42 center=(483.25, 482.0) side_px=22.8 near_edge=False"
+  },
+  {
+    "stage": "flip_segmenter",
+    "ok": true,
+    "detail": "mask_px=5327 confidence=0.957 roi_bbox=(430, 429, 535, 534)"
+  },
+  {
+    "stage": "geometry",
+    "ok": true,
+    "detail": "n_raw=5327 n_valid_depth=5327 n_final=1595 table_plane_found=True"
+  },
+  {
+    "stage": "grasp_planner",
+    "ok": true,
+    "detail": "grasp_width=0.0463m yaw=5.6deg grasp_pos=[ 0.46280795 -0.08474341 -0.04967918]"
+  },
+  {
+    "stage": "robot_controller:pregrasp",
+    "ok": true,
+    "detail": "steps=5 pos_err=0.0054 rot_err=0.0155"
+  },
+  {
+    "stage": "robot_controller:descend_to_grasp",
+    "ok": true,
+    "detail": "steps=16 pos_err=0.0059 rot_err=0.0216"
+  },
+  {
+    "stage": "robot_controller:close_gripper",
+    "ok": true,
+    "detail": "steps=19 pos_err=0.0000 rot_err=0.0000"
+  },
+  {
+    "stage": "robot_controller:lift",
+    "ok": true,
+    "detail": "steps=15 pos_err=0.0050 rot_err=0.0026"
+  },
+  {
+    "stage": "robot_controller:transport_to_place",
+    "ok": true,
+    "detail": "steps=10 pos_err=0.0042 rot_err=0.0053"
+  },
+  {
+    "stage": "robot_controller:descend_to_place",
+    "ok": true,
+    "detail": "steps=26 pos_err=0.0613 rot_err=0.0099 [stopped_by_contact]"
+  },
+  {
+    "stage": "robot_controller:open_gripper",
+    "ok": true,
+    "detail": "steps=40 pos_err=0.0000 rot_err=0.0000"
+  },
+  {
+    "stage": "robot_controller:retract",
+    "ok": true,
+    "detail": "steps=31 pos_err=0.0079 rot_err=0.0333 [stopped_by_contact]"
+  },
+  {
+    "stage": "outcome_check",
+    "ok": true,
+    "detail": "pos_before=[-0.08964622 -0.09397553  0.84913993] pos_after=[ 0.23536386 -0.00420289  0.90674024] in_bin_xy=True controller_success=True"
+  }
+]

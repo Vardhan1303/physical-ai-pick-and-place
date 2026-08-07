@@ -124,6 +124,29 @@ def look_at_quat(cam_pos, target, world_up=(0, 0, 1)):
     return quat
 
 
+def radial_decal_quat(azimuth_rad):
+    """
+    Returns a MuJoCo quaternion (w,x,y,z) for a flat decal geom sitting
+    tangent to a cylinder's curved side at the given azimuth (angle in the
+    body's local XY plane, standard math convention: 0 = +X, pi/2 = +Y),
+    with the cylinder's axis along local Z.
+
+    Local Z (the decal's texture-correct face — see _add_aruco_decal's
+    docstring for why it must be local Z) is pointed radially OUTWARD at
+    that azimuth; local Y is pointed +Z (world/body up) so the marker
+    renders upright rather than sideways; local X is the remaining tangent
+    direction, completing a right-handed frame.
+    """
+    n = np.array([np.cos(azimuth_rad), np.sin(azimuth_rad), 0.0])   # local Z -> outward radial
+    up = np.array([0.0, 0.0, 1.0])                                   # local Y -> world up
+    tangent = np.cross(up, n)                                        # local X
+    tangent = tangent / np.linalg.norm(tangent)
+    R = np.column_stack([tangent, up, n])
+    quat = np.zeros(4)
+    mujoco.mju_mat2Quat(quat, R.flatten())
+    return quat
+
+
 class PickPlaceEnv(ManipulationEnv):
     """
     Tabletop pick-and-place scene for point-prompted grasping. Structurally
@@ -142,6 +165,14 @@ class PickPlaceEnv(ManipulationEnv):
             actual mesh/shape; nothing in this class hard-codes "box" as a
             perception assumption — it's just what Phase 1 needs to exist.
     """
+
+    # XY world-frame offset of side_oblique_camera relative to the table
+    # center (Z is handled separately by _add_side_oblique_camera). Shared
+    # with _add_aruco_decal so the marker decal's outward-facing azimuth is
+    # always computed FROM the camera's actual position, not a hand-copied
+    # guess that could silently drift out of sync with the camera.
+    _CAMERA_XY_OFFSET = np.array([-0.45, -0.45])
+    _CAMERA_XY_OFFSET_3D = np.array([-0.45, -0.45, 0.55])
 
     def __init__(
         self,
@@ -325,10 +356,17 @@ class PickPlaceEnv(ManipulationEnv):
     def _add_aruco_decal(self, cyl_obj: CylinderObject):
         """
         Attaches an ArUco marker as a thin flat decal geom tangent to the
-        target cylinder's curved side, on the -Y side (facing
-        side_oblique_camera, given the camera's [-0.45,-0.45,...] offset
-        and the fixed yaw=0 placement — same facing convention as the
-        earlier box-top-face decal).
+        target cylinder's curved side, facing side_oblique_camera.
+
+        The facing azimuth is computed FROM the camera's actual XY offset
+        (self._CAMERA_XY_OFFSET), not assumed to be straight along -Y. An
+        earlier version hardcoded -Y and the marker rendered as a heavily
+        foreshortened, darkly-shaded parallelogram and failed ArUco
+        detection outright — the camera sits at an equal diagonal offset
+        in -X and -Y ([-0.45, -0.45]), roughly 45 degrees away from -Y, so
+        a decal facing pure -Y was significantly off-axis from the
+        camera's real viewing direction. Confirmed by direct render +
+        cv2.aruco detection pass after the fix (see THESIS_PLAN.md).
 
         Mechanism: `cyl_obj._obj` is the real ET.Element robosuite's own
         `PrimitiveObject._get_object_subtree_` builds for this object (see
@@ -382,22 +420,18 @@ class PickPlaceEnv(ManipulationEnv):
         decal_half_w = 0.5 * radius
         decal_half_h = 0.4 * half_length
 
-        # Orientation: identity quat would point the decal's local Z
-        # "up" (+world Z), same as the old top-face case. We instead need
-        # local Z pointing in -Y (radially outward on the camera-facing
-        # side), local Y pointing +Z (so the marker sits upright, not
-        # rotated 90deg), and local X left at +X (tangent to the curve,
-        # horizontal). That's a +90deg rotation about the X axis:
-        #   R = Rx(90deg): X->X, Y->+Z, Z->-Y
-        # As a quaternion (MuJoCo's w,x,y,z convention): [cos45, sin45, 0, 0].
-        half_ang = np.pi / 4
-        decal_quat = [np.cos(half_ang), np.sin(half_ang), 0.0, 0.0]
+        # Azimuth pointing from the object toward the camera's actual XY
+        # offset (see docstring above for why this isn't hardcoded to -Y).
+        azimuth = float(np.arctan2(self._CAMERA_XY_OFFSET[1], self._CAMERA_XY_OFFSET[0]))
+        decal_quat = radial_decal_quat(azimuth)
+        decal_r = radius + 0.0006  # flush against the curved surface, tiny clearance
+        decal_pos = [decal_r * np.cos(azimuth), decal_r * np.sin(azimuth), 0]
 
         decal = new_geom(
             name="target_marker_decal",
             type="box",
             size=[decal_half_w, decal_half_h, 0.0005],
-            pos=[0, -(radius + 0.0006), 0],
+            pos=decal_pos,
             quat=decal_quat,
             group=1,
             material=prefixed_mat_name,
