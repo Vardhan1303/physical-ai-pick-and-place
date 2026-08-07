@@ -380,7 +380,11 @@ class PickPlaceEnv(ManipulationEnv):
 
         # Generic marker-id-keyed registry (see get_object_body_id /
         # get_marker_size) — base class only ever has one prompted object.
-        self._marker_id_to_object_name = {TARGET_MARKER_ID: self.target_object.naming_prefix + "main"}
+        # Body ids aren't known until _setup_references runs (after sim
+        # compilation), so store the MujocoObject itself here and resolve
+        # .root_body -> body id there, same as the original single-target
+        # code already did.
+        self._marker_id_to_object = {TARGET_MARKER_ID: self.target_object}
         self._marker_id_to_marker_size = {TARGET_MARKER_ID: self.target_marker_size_m}
 
         self.distractor_objects = []
@@ -545,6 +549,17 @@ class PickPlaceEnv(ManipulationEnv):
         self.distractor_body_ids = [
             self.sim.model.body_name2id(obj.root_body) for obj in self.distractor_objects
         ]
+        # Generic marker-id -> body-id registry, built from whatever
+        # _build_movable_objects() populated in self._marker_id_to_object.
+        # side_grasp_pipeline.py/multi_object_pipeline.py use ONLY this
+        # (via get_object_body_id/get_marker_size below), never
+        # self.target_object_body_id directly, so the same pipeline code
+        # works unmodified against both this single-target env and
+        # MultiObjectPickPlaceEnv.
+        self.marker_id_to_body_id = {
+            marker_id: self.sim.model.body_name2id(obj.root_body)
+            for marker_id, obj in self._marker_id_to_object.items()
+        }
 
     def _reset_internal(self):
         super()._reset_internal()
@@ -598,6 +613,26 @@ class PickPlaceEnv(ManipulationEnv):
         printed marker's size on a real robot — not object ground truth
         about pose, class, or segmentation)."""
         return float(self.target_marker_size_m)
+
+    def get_object_body_id(self, marker_id: int) -> int:
+        """Generic marker-id -> body-id lookup (see _setup_references).
+        Legitimate for pipeline/eval code the same way get_bin_top_center
+        is: it's "which body does this marker's scene-construction belong
+        to", not perception output."""
+        return self.marker_id_to_body_id[marker_id]
+
+    def get_marker_size(self, marker_id: int) -> float:
+        """Generic per-marker real-world PATTERN-square side length
+        (meters) — see get_target_marker_size's docstring for why this
+        isn't the full decal size. Base class only ever has one entry
+        (TARGET_MARKER_ID); MultiObjectPickPlaceEnv populates one per
+        shape."""
+        return float(self._marker_id_to_marker_size[marker_id])
+
+    def get_available_marker_ids(self):
+        """All marker IDs currently present in the scene — lets pipeline
+        scripts loop 'pick everything' without hardcoding the ID list."""
+        return list(self.marker_id_to_body_id.keys())
 
     def get_bin_top_center(self) -> np.ndarray:
         """World-frame XYZ of the destination bin's top surface center —

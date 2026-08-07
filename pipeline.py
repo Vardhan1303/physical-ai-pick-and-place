@@ -113,7 +113,22 @@ class VideoRecorder:
                 [
                     "ffmpeg", "-y", "-loglevel", "error",
                     "-i", self._raw_path,
-                    "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-c:v", "libx264",
+                    # Baseline profile / level 3.0, not libx264's default
+                    # (High profile + CABAC): after switching to plain
+                    # libx264 the user STILL saw static in Windows Media
+                    # Player. WMP's built-in H.264 decoder is old and only
+                    # reliably handles Baseline/Main profile content;
+                    # High-profile B-frames/CABAC are a common cause of
+                    # exactly this "plays as noise" failure mode on that
+                    # specific player (VLC/modern players handle High fine,
+                    # which is why the ffprobe/ffmpeg-decode self-check
+                    # alone didn't catch it). Baseline is the safe
+                    # lowest-common-denominator choice for a native Windows
+                    # player, at the cost of file size, and 640x480 @ 20fps
+                    # clips are tiny anyway.
+                    "-profile:v", "baseline", "-level", "3.0",
+                    "-pix_fmt", "yuv420p",
                     "-movflags", "+faststart",
                     self.final_path,
                 ],
