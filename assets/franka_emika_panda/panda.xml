@@ -277,9 +277,19 @@
          the default gains assume a compliant real gripper; against a rigid contact-limited
          object in sim they only produce ~1N of steady grip force at the equilibrium gap,
          nowhere near enough friction to hold even a light 50g object during a lift. This is
-         an Iphoreos/physical-ai-pick-and-place-specific tuning change, not a Menagerie bug. -->
+         an Iphoreos/physical-ai-pick-and-place-specific tuning change, not a Menagerie bug.
+
+         IMPORTANT: gainprm[0] must scale WITH biasprm[1], not stay fixed. This
+         actuator's equilibrium length is gainprm[0]*ctrl / |biasprm[1]| — raising
+         biasprm[1] alone (as first done here) shifts that equilibrium too, not just
+         the stiffness. Found the hard way: with only biasprm[1] raised 10x, ctrl=255
+         ("open") only reached ~0.004m per finger instead of the intended 0.04m — the
+         gripper was barely opening at all (easy to miss on small objects, glaringly
+         wrong on bigger ones — this is what "grip is not even opening" turned out to
+         be). gainprm[0] is scaled by the same 10x here to restore the original
+         ctrl->position mapping while keeping the intended stiffness increase. -->
     <general class="panda" name="actuator8" tendon="split" forcerange="-100 100" ctrlrange="0 255"
-      gainprm="0.01568627451 0 0" biasprm="0 -1000 -60"/>
+      gainprm="0.1568627451 0 0" biasprm="0 -1000 -60"/>
   </actuator>
 
   <keyframe>

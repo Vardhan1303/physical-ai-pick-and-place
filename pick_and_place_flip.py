@@ -17,8 +17,9 @@ one pipeline, no per-shape branching until the very last "which bin" step):
      the SAME generic function for every shape, no special-casing
   5. shape_utils.unproject_pixel_to_table(...) turns the grasp pixel into a
      3D world point via the fixed-table-height assumption
-  6. the classified shape name picks which bin to place into (the only place
-     the shape label is used at all)
+  6. shape is logged/printed but does NOT choose the destination — every
+     object goes to the same shared bin (staggered into sub-slots by pick
+     order only, purely to avoid objects landing on top of each other)
   7. manipulation.run_pick_and_place(...) drives the arm: gripper starts
      open -> moves above the object -> descends -> CLOSES the gripper ->
      (weld locks the object to the gripper so it survives lateral transport,
@@ -52,15 +53,14 @@ ROI_SCALE = 2.3          # ROI half-size = max(ROI_MIN_HALF_PX, marker_side_px *
 SIGMA = 0.35
 
 TABLE_Z = 0.4
-GRASP_HEIGHT = 0.44       # table_z + object half-height (0.04, after doubling object size)
+GRASP_HEIGHT = 0.4275     # table_z + object half-height (0.0275 at the 1.4x size)
 
-# The only place a shape label is used: which bin it goes to. Positions match
-# the bin geoms in pickplace_scene.xml.
-BIN_XY = {
-    "square":   (0.55, -0.25),
-    "circle":   (0.55,  0.0),
-    "triangle": (0.55,  0.25),
-}
+# One shared bin (see pickplace_scene.xml's "bin" geom) — shape no longer
+# selects a destination. Objects are staggered into sub-slots within the
+# bin's footprint purely so a later object doesn't land on/collide with one
+# already sitting there; the slot is assigned by pick ORDER, not shape.
+BIN_CENTER = (0.55, 0.0)
+BIN_SLOT_OFFSETS_Y = [-0.07, 0.0, 0.07]  # > object width (0.055) so slots don't touch
 
 OBJECT_BODY_NAMES = ["obj_square", "obj_circle", "obj_triangle"]
 
@@ -174,17 +174,14 @@ def main():
     # Deterministic order (by marker id) so repeated runs behave the same.
     detections.sort(key=lambda d: d["marker_id"])
 
-    for det in detections:
+    for idx, det in enumerate(detections):
         shape = det["shape"]
-        if shape not in BIN_XY:
-            print(f"[WARN] marker {det['marker_id']}: unrecognized shape '{shape}', skipping")
-            continue
-
         obj_name = nearest_object_body(model, data, det["world_xy"])
-        place_xy = BIN_XY[shape]
+        slot_y = BIN_SLOT_OFFSETS_Y[idx % len(BIN_SLOT_OFFSETS_Y)]
+        place_xy = (BIN_CENTER[0], BIN_CENTER[1] + slot_y)
 
         print(f"--- picking marker {det['marker_id']} ({shape}, body={obj_name}) "
-              f"-> bin at {place_xy} ---")
+              f"-> bin slot at {place_xy} ---")
         run_pick_and_place(
             model, data, obj_name,
             pick_xy=det["world_xy"],
