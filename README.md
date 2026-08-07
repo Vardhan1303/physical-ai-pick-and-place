@@ -2,7 +2,7 @@
 
 ArUco-Guided Point-Prompted Object Segmentation for Class-Agnostic Robotic Grasping in MuJoCo.
 
-A Franka Panda arm, simulated in MuJoCo via robosuite, picks up a tabletop object and places it in a bin without ever being told what class of object it is. An ArUco marker on the object gives a single point prompt; FLIP (a fovea-like, foundation-model-scale segmentation network) turns that point into a full object mask; the mask plus depth becomes a 3D point cloud; a class-agnostic geometric planner turns the point cloud into a grasp pose; a closed-loop operational-space controller executes the grasp. Ground truth from the simulator is used only to score results afterward, never to help the pipeline decide anything.
+A Franka Panda arm, simulated in MuJoCo via robosuite, picks up a bottle-like round object and places it in a bin without ever being told what class of object it is. An ArUco marker stuck to the object's curved side gives a single point prompt; FLIP (a fovea-like, foundation-model-scale segmentation network) turns that point into a full object mask; the mask plus depth becomes a 3D point cloud; a class-agnostic geometric planner turns the point cloud into a grasp pose; a closed-loop operational-space controller executes the grasp. Ground truth from the simulator is used only to score results afterward, never to help the pipeline decide anything.
 
 All 8 pipeline stages are implemented and verified end to end: real ArUco detection, real FLIP ONNX inference (with the actual `flip_position` C extension built and running, not stubbed), real point-cloud construction, real grasp planning, and real robosuite OSC execution that places the object in the destination bin.
 
