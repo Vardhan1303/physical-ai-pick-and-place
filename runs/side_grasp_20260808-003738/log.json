@@ -22,17 +22,17 @@
   {
     "stage": "flip_segmenter",
     "ok": true,
-    "detail": "mask_px=8330 confidence=0.525 roi_bbox=(490, 251, 730, 491)"
+    "detail": "mask_px=3395 confidence=0.648 roi_bbox=(490, 251, 730, 491)"
   },
   {
     "stage": "geometry",
     "ok": true,
-    "detail": "n_raw=8330 n_valid_depth=8330 n_final=6426 table_plane_found=True"
+    "detail": "n_raw=3395 n_valid_depth=3395 n_final=1714 table_plane_found=True"
   },
   {
     "stage": "grasp_planner",
     "ok": true,
-    "detail": "grasp_width=0.0519m grasp_pos=[ 0.45576102 -0.08135956  0.06799334] approach=[ 0.89873956 -0.43848284 -0.        ] closing=[ 0.43848284  0.89873956 -0.        ] up=[0. 0. 1.]"
+    "detail": "grasp_width=0.0555m grasp_pos=[ 0.4556275  -0.08848726  0.06799299] approach=[ 0.89873956 -0.43848284 -0.        ] closing=[ 0.43848284  0.89873956 -0.        ] up=[0. 0. 1.]"
   },
   {
     "stage": "robot_controller:safe_high",
@@ -42,7 +42,7 @@
   {
     "stage": "robot_controller:side_pregrasp",
     "ok": true,
-    "detail": "steps=4 pos_err=0.0058 rot_err=0.0049"
+    "detail": "steps=4 pos_err=0.0059 rot_err=0.0052"
   },
   {
     "stage": "robot_controller:side_approach",
@@ -57,16 +57,36 @@
   {
     "stage": "robot_controller:retreat",
     "ok": true,
-    "detail": "steps=12 pos_err=0.0053 rot_err=0.0116"
+    "detail": "steps=12 pos_err=0.0054 rot_err=0.0116"
   },
   {
     "stage": "robot_controller:lift",
-    "ok": false,
-    "detail": "steps=400 pos_err=0.0194 rot_err=0.0212"
+    "ok": true,
+    "detail": "steps=14 pos_err=0.0055 rot_err=0.0163"
+  },
+  {
+    "stage": "robot_controller:transport_to_place",
+    "ok": true,
+    "detail": "steps=7 pos_err=0.0056 rot_err=0.0012"
+  },
+  {
+    "stage": "robot_controller:descend_to_place",
+    "ok": true,
+    "detail": "steps=29 pos_err=0.0869 rot_err=0.1071 [stopped_by_contact]"
+  },
+  {
+    "stage": "robot_controller:open_gripper",
+    "ok": true,
+    "detail": "steps=40 pos_err=0.0000 rot_err=0.0000"
+  },
+  {
+    "stage": "robot_controller:retract",
+    "ok": true,
+    "detail": "steps=13 pos_err=0.0033 rot_err=0.0085"
   },
   {
     "stage": "outcome_check",
     "ok": false,
-    "detail": "pos_before=[-0.08957643 -0.09394217  0.88937756] pos_after=[-0.08651137 -0.09003541  0.8910847 ] in_bin_xy=False controller_success=False"
+    "detail": "pos_before=[-0.08957643 -0.09394217  0.88937756] pos_after=[-0.08725048 -0.08941633  0.89108942] in_bin_xy=False controller_success=True"
   }
 ]
