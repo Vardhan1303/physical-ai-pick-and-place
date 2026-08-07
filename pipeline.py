@@ -79,8 +79,19 @@ class VideoRecorder:
         self.env = env
         self.width, self.height = width, height
         self.capture_every = capture_every
+        self.fps = fps
         self._counter = 0
-        self.writer = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
+        self.final_path = path
+        # cv2's "mp4v" fourcc writes raw MPEG-4 part 2 in an MP4 container.
+        # That combination is legal but many players (Windows Media Player
+        # in particular — confirmed by the user, who saw solid static/noise
+        # instead of the recording) don't ship a decoder for it and instead
+        # of failing cleanly just render garbage. Write to a scratch file
+        # with this codec (cv2 has no built-in H.264 encoder in most wheel
+        # builds), then transcode to H.264/yuv420p — the combination every
+        # mainstream player supports — via ffmpeg in close().
+        self._raw_path = path + ".raw.mp4"
+        self.writer = cv2.VideoWriter(self._raw_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
 
     def maybe_capture(self):
         self._counter += 1
@@ -93,6 +104,34 @@ class VideoRecorder:
 
     def close(self):
         self.writer.release()
+        self._transcode_to_h264()
+
+    def _transcode_to_h264(self):
+        import subprocess
+        try:
+            result = subprocess.run(
+                [
+                    "ffmpeg", "-y", "-loglevel", "error",
+                    "-i", self._raw_path,
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-movflags", "+faststart",
+                    self.final_path,
+                ],
+                capture_output=True, text=True, timeout=120,
+            )
+            if result.returncode != 0 or not os.path.exists(self.final_path):
+                # ffmpeg unavailable or failed — fall back to the raw file
+                # rather than silently losing the recording.
+                print(f"[VideoRecorder] ffmpeg transcode failed ({result.returncode}): "
+                      f"{result.stderr.strip()[-500:]}; keeping raw mp4v file at {self._raw_path}")
+                if os.path.exists(self._raw_path) and not os.path.exists(self.final_path):
+                    os.replace(self._raw_path, self.final_path)
+                return
+            os.remove(self._raw_path)
+        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+            print(f"[VideoRecorder] ffmpeg not available ({e}); keeping raw mp4v file at {self._raw_path}")
+            if os.path.exists(self._raw_path) and not os.path.exists(self.final_path):
+                os.replace(self._raw_path, self.final_path)
 
 
 def run_pipeline(

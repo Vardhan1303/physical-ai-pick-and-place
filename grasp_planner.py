@@ -364,23 +364,35 @@ def plan_side_grasp(
             f"estimated grasp height {grasp_z:.3f}m is at/below the table ({table_height:.3f}m)",
         )
 
-    # Grasp XY: the point cloud's OWN centroid, not the marker's surface
-    # position — the marker sits on the object's visible surface, offset
-    # from the object's true central axis by roughly its radius, while
-    # the cloud's centroid (from one oblique camera seeing mostly the
-    # near/front surface) is a closer proxy for the object's horizontal
-    # center. Documented single-camera 2.5D limitation, same category as
-    # plan_grasp's — an estimate, not a measurement.
-    grasp_xy = points_robot[:, :2].mean(axis=0)
-    grasp_pos = np.array([grasp_xy[0], grasp_xy[1], grasp_z])
-
-    # Step 9: initial gripper-opening estimate — visible extent along the
-    # CLOSING direction specifically (closing_direction is horizontal by
-    # construction, so a plain dot product against the full 3D points is
-    # correct and needs no separate XY-only special case).
+    # Step 9 (moved earlier): initial gripper-opening estimate — visible
+    # extent along the CLOSING direction specifically (closing_direction
+    # is horizontal by construction, so a plain dot product against the
+    # full 3D points is correct and needs no separate XY-only special
+    # case). Needed before finalizing grasp_xy below.
     closing_proj = points_robot @ closing_direction
     extent = float(np.percentile(closing_proj, 95) - np.percentile(closing_proj, 5))
     grasp_width = extent + width_safety_margin
+
+    # Grasp XY: the point cloud's OWN centroid was found (empirically, via
+    # in-sandbox execution — outcome_check kept failing even though every
+    # controller stage converged) to be biased toward the near/camera-facing
+    # surface, NOT the object's true central axis. A single oblique camera
+    # only sees the front ~half of the object, so the raw centroid sits
+    # roughly one radius short of center, along the outward normal (toward
+    # the camera) — closing the gripper there grasps empty air just in
+    # front of the object.
+    #
+    # Correction: shift the centroid along approach_direction (i.e. AWAY
+    # from the camera, INTO the object) by half the visible closing-axis
+    # extent. `extent` (diameter transverse to the approach axis) is used
+    # as a proxy for the object's depth extent too — exact for a cylinder/
+    # sphere's circular cross-section, an approximation for a box/prism
+    # face, consistent with this planner's stated goal of being generic
+    # rather than shape-specific.
+    surface_centroid_xy = points_robot[:, :2].mean(axis=0)
+    center_shift = 0.5 * extent
+    grasp_xy = surface_centroid_xy + approach_direction[:2] * center_shift
+    grasp_pos = np.array([grasp_xy[0], grasp_xy[1], grasp_z])
     if grasp_width > gripper_max_width:
         return None, GraspFailure(
             "object_too_wide",
