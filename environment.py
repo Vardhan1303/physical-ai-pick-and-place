@@ -307,36 +307,8 @@ class PickPlaceEnv(ManipulationEnv):
         mujoco_arena.set_origin([0, 0, 0])
         self._add_side_oblique_camera(mujoco_arena)
 
-        tex_attrib = {"type": "cube"}
-        mat_attrib = {"texrepeat": "1 1", "specular": "0.4", "shininess": "0.1"}
-        target_material = CustomMaterial(
-            texture="WoodRed", tex_name="target_tex", mat_name="target_mat",
-            tex_attrib=tex_attrib, mat_attrib=mat_attrib,
-        )
-        self.target_object = CylinderObject(
-            name="target_object",
-            size_min=self.target_object_size,
-            size_max=self.target_object_size,
-            rgba=[0.8, 0.15, 0.15, 1],
-            material=target_material,
-            rng=self.rng,
-        )
-        self._add_aruco_decal(self.target_object)
+        all_movable = self._build_movable_objects()
 
-        self.distractor_objects = []
-        distractor_colors = [[0.2, 0.6, 0.8, 1], [0.3, 0.75, 0.35, 1], [0.85, 0.7, 0.2, 1]]
-        for i in range(self.num_distractors):
-            self.distractor_objects.append(
-                BoxObject(
-                    name=f"distractor_{i}",
-                    size_min=[0.02, 0.02, 0.04],
-                    size_max=[0.025, 0.025, 0.05],
-                    rgba=distractor_colors[i % len(distractor_colors)],
-                    rng=self.rng,
-                )
-            )
-
-        all_movable = [self.target_object] + self.distractor_objects
         self.placement_initializer = UniformRandomSampler(
             name="ObjectSampler",
             mujoco_objects=all_movable,
@@ -377,6 +349,54 @@ class PickPlaceEnv(ManipulationEnv):
             mujoco_robots=[robot.robot_model for robot in self.robots],
             mujoco_objects=all_movable + [self.bin_object],
         )
+
+    def _build_movable_objects(self):
+        """
+        Builds the target object (+ distractors) and returns the full list
+        of movable MujocoObjects for the placement initializer / task
+        assembly. Factored out of _load_model so MultiObjectPickPlaceEnv
+        (environment_multi.py) can override just this piece and reuse
+        everything else (arena, camera, bin, references, reset) unchanged
+        — same "extend, don't rewrite" approach as the rest of this file.
+        Also populates self.marker_id_to_shape_kwargs = {} (base class:
+        single target, so this stays a length-1 mapping) for accessors
+        below.
+        """
+        tex_attrib = {"type": "cube"}
+        mat_attrib = {"texrepeat": "1 1", "specular": "0.4", "shininess": "0.1"}
+        target_material = CustomMaterial(
+            texture="WoodRed", tex_name="target_tex", mat_name="target_mat",
+            tex_attrib=tex_attrib, mat_attrib=mat_attrib,
+        )
+        self.target_object = CylinderObject(
+            name="target_object",
+            size_min=self.target_object_size,
+            size_max=self.target_object_size,
+            rgba=[0.8, 0.15, 0.15, 1],
+            material=target_material,
+            rng=self.rng,
+        )
+        self._add_aruco_decal(self.target_object)
+
+        # Generic marker-id-keyed registry (see get_object_body_id /
+        # get_marker_size) — base class only ever has one prompted object.
+        self._marker_id_to_object_name = {TARGET_MARKER_ID: self.target_object.naming_prefix + "main"}
+        self._marker_id_to_marker_size = {TARGET_MARKER_ID: self.target_marker_size_m}
+
+        self.distractor_objects = []
+        distractor_colors = [[0.2, 0.6, 0.8, 1], [0.3, 0.75, 0.35, 1], [0.85, 0.7, 0.2, 1]]
+        for i in range(self.num_distractors):
+            self.distractor_objects.append(
+                BoxObject(
+                    name=f"distractor_{i}",
+                    size_min=[0.02, 0.02, 0.04],
+                    size_max=[0.025, 0.025, 0.05],
+                    rgba=distractor_colors[i % len(distractor_colors)],
+                    rng=self.rng,
+                )
+            )
+
+        return [self.target_object] + self.distractor_objects
 
     def _add_side_oblique_camera(self, mujoco_arena):
         """
