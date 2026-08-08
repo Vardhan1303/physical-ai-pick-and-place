@@ -124,8 +124,16 @@ def run_side_grasp_pipeline(
     max_steps_per_move=400,
     record_video=True,
     target_marker_id=None,
+    extra_step_callback=None,
 ):
     """
+    extra_step_callback: optional extra fn() called alongside the video
+    recorder's own per-step capture (or alone, if record_video=False) —
+    used by run_interactive_demo.py to drive env.render() every
+    simulation step for a live on-screen viewer, without needing a
+    separate copy of this whole function. None (default) for every other
+    caller.
+
     target_marker_id: which ArUco marker to select as the grasp target.
     Defaults to environment.TARGET_MARKER_ID (Phase 1's single-cylinder
     scene) for backward compatibility. Pass one of
@@ -283,7 +291,15 @@ def run_side_grasp_pipeline(
 
         # --- Execution ---
         recorder = VideoRecorder(env, os.path.join(run_dir, "05_execution.mp4")) if record_video else None
-        step_cb = recorder.maybe_capture if recorder else None
+
+        def step_cb():
+            if recorder:
+                recorder.maybe_capture()
+            if extra_step_callback:
+                extra_step_callback()
+
+        if recorder is None and extra_step_callback is None:
+            step_cb = None
 
         target_body_id = env.get_object_body_id(target_marker_id)
         pos_before = np.array(env.sim.data.body_xpos[target_body_id]).copy()

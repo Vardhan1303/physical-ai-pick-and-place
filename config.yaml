@@ -1,0 +1,43 @@
+# config.yaml — single source of config for the multi-object / side-grasp
+# extension (side_grasp_pipeline.py, multi_object_pipeline.py,
+# run_interactive_demo.py). Load via config.py::load_config().
+#
+# Nothing in here is read by the perception/grasp-planning modules
+# directly (aruco_prompt.py, flip_segmenter.py, geometry.py,
+# grasp_planner.py) — only by the orchestration scripts that build the
+# env and decide which marker(s) to pick. Marker-ID <-> shape mapping
+# mirrors environment_multi.MARKER_ID_BY_SHAPE and must stay in sync with
+# it (see config.py's own sanity check against that module at load time).
+
+scene:
+  # Which object families to place on the table. Subset of
+  # [cylinder, box, prism, sphere]. Order doesn't matter — marker IDs are
+  # fixed per shape, not per list position.
+  object_shapes: [cylinder, box, prism, sphere]
+  randomize_scale: false
+  randomize_color: false
+  seed: 0
+
+marker_ids:
+  cylinder: 0
+  box: 1
+  prism: 2
+  sphere: 3
+
+camera:
+  name: side_oblique_camera
+  height: 720
+  width: 960
+
+task:
+  # Which marker(s) to pick, in order. null = pick every marker present
+  # in `scene.object_shapes`, ascending id order (Mode B: sequential
+  # multi-object pick-and-place). Set to a single-element list (e.g.
+  # [0]) for Mode A (single-object validation).
+  target_marker_ids: null
+  model_size: small          # FLIP model size: tiny | small
+  max_steps_per_move: 400
+  record_video: true
+
+output:
+  runs_dir: runs
