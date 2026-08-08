@@ -242,8 +242,27 @@ def run_side_grasp_pipeline(
             rgb, detection.center_px, marker_side_px=detection.side_length_px,
             debug_dir=run_dir, debug_tag="03_flip",
         )
-        if int((seg.mask_full > 0).sum()) > 0 and _touches_border(seg):
-            log.log("flip_segmenter:regrow", "initial mask touched ROI border — retrying with a larger ROI")
+        n_fg_initial = int((seg.mask_full > 0).sum())
+        marker_area_px = float(detection.side_length_px) ** 2
+        # Two independent regrow triggers, both retried the same way (a
+        # single larger-ROI pass — see ROI_TALL_OBJECT_MIN_HALF_PX):
+        #   1. mask touches the ROI border -> truncation signal, the
+        #      object likely extends past what we cropped.
+        #   2. mask is barely bigger than the marker sticker itself
+        #      (< 6x its pixel area) -> FLIP segmented "the marker decal"
+        #      rather than "the object it's stuck to". Confirmed
+        #      in-sandbox: switching the target's appearance from a wood
+        #      texture to a flat blue plastic color dropped FLIP's mask
+        #      from ~thousands of px down to ~570px — almost exactly the
+        #      marker's own footprint — even though the ROI itself hadn't
+        #      changed and never touched its border. A model-appearance
+        #      sensitivity, not a cropping bug, so the fix is the same
+        #      "try a bigger, more context-rich ROI" lever, triggered on a
+        #      different signal.
+        too_small = 0 < n_fg_initial < 6 * marker_area_px
+        if n_fg_initial > 0 and (_touches_border(seg) or too_small):
+            reason = "touched ROI border" if _touches_border(seg) else "suspiciously small vs marker size"
+            log.log("flip_segmenter:regrow", f"initial mask {reason} (mask_px={n_fg_initial}) — retrying with a larger ROI")
             seg = segmenter.segment_from_prompt(
                 rgb, detection.center_px, marker_side_px=detection.side_length_px,
                 debug_dir=run_dir, debug_tag="03_flip_grown",
