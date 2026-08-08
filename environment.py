@@ -373,21 +373,23 @@ class PickPlaceEnv(ManipulationEnv):
         single target, so this stays a length-1 mapping) for accessors
         below.
         """
-        tex_attrib = {"type": "cube"}
-        mat_attrib = {"texrepeat": "1 1", "specular": "0.4", "shininess": "0.1"}
-        target_material = CustomMaterial(
-            texture="WoodRed", tex_name="target_tex", mat_name="target_mat",
-            tex_attrib=tex_attrib, mat_attrib=mat_attrib,
-        )
+        # No CustomMaterial/texture here (unlike an earlier version that
+        # used a "WoodRed" wood-grain texture) — a textured material
+        # OVERRIDES rgba entirely in MuJoCo (same issue found and fixed
+        # for the multi-object scene's shapes), so the wood texture was
+        # silently making the rgba value below irrelevant. Plain rgba
+        # with alpha<1 gives the translucent-blue-plastic-bottle look
+        # requested (see the reference photo) without that override.
         self.target_object = CylinderObject(
             name="target_object",
             size_min=self.target_object_size,
             size_max=self.target_object_size,
-            rgba=[0.8, 0.15, 0.15, 1],
-            material=target_material,
+            rgba=[0.35, 0.6, 0.85, 0.75],
+            material=None,
             rng=self.rng,
         )
         self._add_aruco_decal(self.target_object)
+        self._add_bottle_cap(self.target_object)
 
         # Generic marker-id-keyed registry (see get_object_body_id /
         # get_marker_size) — base class only ever has one prompted object.
@@ -553,6 +555,30 @@ class PickPlaceEnv(ManipulationEnv):
             conaffinity=0,
         )
         cyl_obj._obj.append(decal)
+
+    def _add_bottle_cap(self, cyl_obj: CylinderObject):
+        """
+        Purely cosmetic: a short, wider-than-nothing red cylinder sitting
+        on top of the target cylinder, so it reads as a capped bottle
+        (matching the reference photo) rather than a plain rod. Visual
+        only (contype=0/conaffinity=0, group=1 — same convention as the
+        ArUco decal above) — does not change the object's collision
+        geometry, grasp planning, or bottom/top_offset accounting, all of
+        which still key off CylinderObject's own `size`, unaffected by
+        this extra geom.
+        """
+        radius, half_length = cyl_obj.size
+        cap_radius = radius * 1.05
+        cap_half_height = 0.10 * half_length
+        cap_pos = [0.0, 0.0, half_length + cap_half_height]
+        cap = new_geom(
+            name="target_bottle_cap", type="cylinder",
+            size=[cap_radius, cap_half_height],
+            pos=cap_pos,
+            rgba=[0.8, 0.15, 0.1, 1],
+            group=1, contype=0, conaffinity=0,
+        )
+        cyl_obj._obj.append(cap)
 
     def _setup_references(self):
         super()._setup_references()
