@@ -28,6 +28,11 @@ h5py                            # required transitively by robosuite.utils.camer
 Pillow
 onnxruntime                      # FLIP's ONNX encoder/predictor inference (flip_segmenter.py)
 matplotlib                        # evaluation.py plots
+imageio-ffmpeg                    # pipeline.py::VideoRecorder — bundles a static ffmpeg binary so
+                                    # execution videos transcode to widely-playable H.264 even when
+                                    # no system ffmpeg is on PATH (this was the actual cause of
+                                    # "video plays as static" on a fresh Windows env — see
+                                    # VideoRecorder._resolve_ffmpeg's comment)
 
 # Not needed unless you add the Phase 8 YOLOv8-seg baseline described in
 # THESIS_PLAN.md:
