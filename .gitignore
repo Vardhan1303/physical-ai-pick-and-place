@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Auto-generated at runtime, not source
+markers/*.png
+
+# FLIP is a separate clone, not vendored in this repo (see README §8)
+FLIP-main/
