@@ -1,0 +1,42 @@
+[
+  {
+    "stage": "reset",
+    "ok": true,
+    "detail": "env reset + 30 settle steps, seed=external"
+  },
+  {
+    "stage": "capture",
+    "ok": true,
+    "detail": "rgb=(720, 960, 3) depth_range=(0.211,4.533)m marker_size_m=0.0179"
+  },
+  {
+    "stage": "aruco_prompt",
+    "ok": true,
+    "detail": "marker_id=42 center=(571.5, 332.5) side_px=15.5 near_edge=False"
+  },
+  {
+    "stage": "marker_pose",
+    "ok": true,
+    "detail": "pos_robot=[ 0.51630247 -0.08002221 -0.02244139] outward_normal_robot=[-0.08949206  0.18603133  0.9784598 ]"
+  },
+  {
+    "stage": "flip_segmenter:regrow",
+    "ok": true,
+    "detail": "initial mask touched ROI border (mask_px=6427) \u2014 retrying with half_px=72 (was 45)"
+  },
+  {
+    "stage": "flip_segmenter",
+    "ok": true,
+    "detail": "mask_px=157 confidence=0.587 roi_bbox=(499, 260, 643, 404)"
+  },
+  {
+    "stage": "geometry",
+    "ok": true,
+    "detail": "n_raw=157 n_valid_depth=157 n_final=157 table_plane_found=False"
+  },
+  {
+    "stage": "grasp_planner",
+    "ok": false,
+    "detail": "FAILED: degenerate_marker_normal \u2014 marker outward normal is unreliable ([-0.08949206  0.18603133  0.97845978], horiz_norm=0.206) and the centroid->marker fallback is also degenerate (norm=0.0013)"
+  }
+]
