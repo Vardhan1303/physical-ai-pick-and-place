@@ -75,13 +75,19 @@ class VideoRecorder:
     call — see environment.py's own note on this), so frames are flipped
     here before writing."""
 
-    def __init__(self, env, path, width=640, height=480, fps=20, capture_every=4):
+    def __init__(self, env, path, width=640, height=480, fps=20, capture_every=4, camera_name=None):
         self.env = env
         self.width, self.height = width, height
         self.capture_every = capture_every
         self.fps = fps
         self._counter = 0
         self.final_path = path
+        # Defaults to the SAME camera the debug images (00_rgb.png etc.)
+        # were captured from, so the saved video is never a different
+        # angle than the stills — see maybe_capture's docstring for why
+        # this now goes through get_camera_rgbd instead of a raw
+        # sim.render() call.
+        self.camera_name = camera_name or SIDE_CAMERA_NAME
         # cv2's "mp4v" fourcc writes raw MPEG-4 part 2 in an MP4 container.
         # That combination is legal but many players (Windows Media Player
         # in particular — confirmed by the user, who saw solid static/noise
@@ -97,9 +103,27 @@ class VideoRecorder:
         self._counter += 1
         if self._counter % self.capture_every != 0:
             return
-        frame = self.env.sim.render(camera_name=SIDE_CAMERA_NAME, width=self.width, height=self.height)
-        frame = frame[::-1]  # OpenGL -> top-down convention, see class docstring
+        # Goes through env.get_camera_rgbd (the SAME call used to save
+        # 00_rgb.png / every other debug still) rather than a raw
+        # env.sim.render(camera_name=...) call. Confirmed necessary on a
+        # real run (not reproducible in the sandbox, which has no
+        # on-screen viewer): with has_renderer=True active (the
+        # interactive demo's on-screen MuJoCo window), a raw sim.render()
+        # call for a DIFFERENT camera than the one currently active in
+        # the on-screen viewer can pick up the viewer's own
+        # (mouse-orbitable, free) camera instead of the requested
+        # side_oblique_camera — the reported symptom was exactly this:
+        # the saved video came from a different angle than the saved
+        # still images, even though both nominally requested the same
+        # camera name. get_camera_rgbd's path (env._get_observations,
+        # robosuite's normal observation-capture pipeline) doesn't share
+        # that ambiguity, at the cost of being somewhat more expensive
+        # per call — fine here since capture_every already throttles to
+        # every 4th step, not every step.
+        frame, _depth = self.env.get_camera_rgbd(camera_name=self.camera_name)
         bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        if bgr.shape[1] != self.width or bgr.shape[0] != self.height:
+            bgr = cv2.resize(bgr, (self.width, self.height))
         self.writer.write(bgr)
 
     def close(self):
