@@ -106,12 +106,49 @@ class VideoRecorder:
         self.writer.release()
         self._transcode_to_h264()
 
+    @staticmethod
+    def _resolve_ffmpeg():
+        """
+        Finds an ffmpeg binary WITHOUT assuming it's on PATH — confirmed
+        necessary: the first version of this fix called "ffmpeg" directly
+        via subprocess, which works in the (Linux, ffmpeg-preinstalled)
+        sandbox but silently fails with FileNotFoundError on a fresh
+        Windows conda env with no system ffmpeg, at which point the old
+        code fell back to shipping the original broken raw mp4v file —
+        i.e. the exact bug this was supposed to fix, just hidden behind a
+        try/except. Two-tier lookup instead of one:
+          1. shutil.which("ffmpeg") — a real system install, if present.
+          2. imageio_ffmpeg's bundled static binary (pip-installable,
+             `pip install imageio-ffmpeg`, no system PATH entry needed at
+             all) — the reliable cross-platform fallback.
+        Returns the resolved path, or None if neither is available (the
+        caller then fails LOUDLY instead of silently shipping mp4v).
+        """
+        import shutil
+        found = shutil.which("ffmpeg")
+        if found:
+            return found
+        try:
+            import imageio_ffmpeg
+            return imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            return None
+
     def _transcode_to_h264(self):
         import subprocess
+        ffmpeg_exe = self._resolve_ffmpeg()
+        if ffmpeg_exe is None:
+            print("[VideoRecorder] No ffmpeg binary found (checked PATH and imageio_ffmpeg) — "
+                  "cannot produce a widely-playable video. Run `pip install imageio-ffmpeg` and "
+                  "retry, or install ffmpeg and add it to PATH. Keeping the raw (likely "
+                  f"unplayable-in-Windows-Media-Player) file at {self._raw_path} for now — "
+                  f"it was NOT renamed to {self.final_path}, so you can tell at a glance that "
+                  "the fix didn't apply.")
+            return
         try:
             result = subprocess.run(
                 [
-                    "ffmpeg", "-y", "-loglevel", "error",
+                    ffmpeg_exe, "-y", "-loglevel", "error",
                     "-i", self._raw_path,
                     "-c:v", "libx264",
                     # Baseline profile / level 3.0, not libx264's default
