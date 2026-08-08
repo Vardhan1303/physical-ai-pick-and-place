@@ -84,24 +84,19 @@ def run_interactive(object_shapes, target_marker_ids=None, seed=0, model_size="s
             obj_run_dir = f"{run_dir}/object_{marker_id}_{shape}"
             print(f"\n=== Picking marker_id={marker_id} ({shape}) — watch the viewer window ===")
 
-            # Live rendering happens via the VideoRecorder.maybe_capture
-            # monkeypatch installed by _install_render_hook() below (see
-            # its docstring for why) — every env.step() inside
-            # execute_side_grasp_plan calls that hook already, so the
-            # on-screen window updates every step with no extra plumbing
-            # needed here.
+            # extra_step_callback=env.render is what makes this
+            # "interactive" rather than headless: execute_side_grasp_plan
+            # (robot_controller.py) calls the step callback after every
+            # single env.step() — run_side_grasp_pipeline combines this
+            # with its own video-recording callback (see its
+            # extra_step_callback docstring), so the on-screen window
+            # updates live every step regardless of whether --no-video
+            # was passed.
             result = run_side_grasp_pipeline(
                 env=env, run_dir=obj_run_dir, model_size=model_size,
                 max_steps_per_move=max_steps_per_move, record_video=record_video,
-                target_marker_id=marker_id,
+                target_marker_id=marker_id, extra_step_callback=env.render,
             )
-            # run_side_grasp_pipeline doesn't itself take a step_callback
-            # override (it always builds its own VideoRecorder-driven
-            # callback when record_video=True) — patch the callback in
-            # AFTER execution isn't possible post-hoc, so instead we rely
-            # on VideoRecorder's own step_callback path to ALSO render:
-            # see _RenderingVideoRecorder below, installed via monkeypatch
-            # right before this loop starts (see __main__).
             results[marker_id] = result
             print(f"    -> success={result['success']} reason={result.get('reason')}")
     finally:
