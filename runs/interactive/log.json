@@ -1,0 +1,42 @@
+[
+  {
+    "stage": "reset",
+    "ok": true,
+    "detail": "env reset + 30 settle steps, seed=external"
+  },
+  {
+    "stage": "capture",
+    "ok": true,
+    "detail": "rgb=(720, 960, 3) depth_range=(0.211,4.533)m marker_size_m=0.0179"
+  },
+  {
+    "stage": "aruco_prompt",
+    "ok": true,
+    "detail": "marker_id=42 center=(571.5, 332.5) side_px=15.5 near_edge=False"
+  },
+  {
+    "stage": "marker_pose",
+    "ok": true,
+    "detail": "pos_robot=[ 0.51630247 -0.08002221 -0.02244139] outward_normal_robot=[-0.08949206  0.18603133  0.9784598 ]"
+  },
+  {
+    "stage": "flip_segmenter:regrow",
+    "ok": true,
+    "detail": "initial mask touched ROI border (mask_px=6426) \u2014 retrying with a larger ROI"
+  },
+  {
+    "stage": "flip_segmenter",
+    "ok": true,
+    "detail": "mask_px=6155 confidence=0.865 roi_bbox=(451, 212, 691, 452)"
+  },
+  {
+    "stage": "geometry",
+    "ok": true,
+    "detail": "n_raw=6155 n_valid_depth=6155 n_final=751 table_plane_found=True"
+  },
+  {
+    "stage": "grasp_planner",
+    "ok": false,
+    "detail": "FAILED: object_too_wide \u2014 estimated grasp width 0.170m (+margin) exceeds gripper max 0.080m"
+  }
+]
