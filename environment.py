@@ -625,6 +625,19 @@ class PickPlaceEnv(ManipulationEnv):
         depth_m = camera_utils.get_real_depth_map(self.sim, depth_norm)
         return rgb, depth_m.squeeze(-1) if depth_m.ndim == 3 else depth_m
 
+    def get_camera_rgb(self, camera_name=SIDE_CAMERA_NAME):
+        """RGB-only variant of get_camera_rgbd, for callers (VideoRecorder)
+        that don't need depth and shouldn't pay for
+        camera_utils.get_real_depth_map's conversion — that call has its
+        own internal assertion (`0 <= depth <= 1`) that can trip on
+        transient rendering noise when polled very frequently mid-motion
+        (confirmed: hit in practice during a live interactive run's
+        every-4th-step video capture), which a pure RGB path has no
+        reason to risk. Same observation pipeline as get_camera_rgbd
+        otherwise — same camera, same frame, no separate render call."""
+        obs = self._get_observations(force_update=True)
+        return obs[f"{camera_name}_image"]
+
     def get_camera_intrinsics(self, camera_name=SIDE_CAMERA_NAME):
         idx = self.camera_names.index(camera_name)
         h, w = self.camera_heights[idx], self.camera_widths[idx]
