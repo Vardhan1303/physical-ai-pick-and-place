@@ -27,16 +27,16 @@
   {
     "stage": "flip_segmenter",
     "ok": true,
-    "detail": "mask_px=6155 confidence=0.865 roi_bbox=(451, 212, 691, 452)"
+    "detail": "mask_px=5729 confidence=0.873 roi_bbox=(451, 212, 691, 452)"
   },
   {
     "stage": "geometry",
     "ok": true,
-    "detail": "n_raw=6155 n_valid_depth=6155 n_final=751 table_plane_found=True"
+    "detail": "n_raw=5729 n_valid_depth=5729 n_final=314 table_plane_found=True"
   },
   {
     "stage": "grasp_planner",
     "ok": false,
-    "detail": "FAILED: object_too_wide \u2014 estimated grasp width 0.170m (+margin) exceeds gripper max 0.080m"
+    "detail": "FAILED: object_too_wide \u2014 estimated grasp width 0.167m (+margin) exceeds gripper max 0.080m"
   }
 ]
