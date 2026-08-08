@@ -1,0 +1,52 @@
+[
+  {
+    "stage": "reset",
+    "ok": true,
+    "detail": "env reset + 30 settle steps, seed=0"
+  },
+  {
+    "stage": "capture",
+    "ok": true,
+    "detail": "rgb=(720, 960, 3) depth_range=(0.211,4.533)m marker_size_m=0.0179"
+  },
+  {
+    "stage": "aruco_prompt",
+    "ok": true,
+    "detail": "marker_id=42 center=(610.75, 371.0) side_px=16.3 near_edge=False"
+  },
+  {
+    "stage": "marker_pose",
+    "ok": true,
+    "detail": "pos_robot=[ 0.46351424 -0.09467857 -0.03802264] outward_normal_robot=[-0.8984495   0.43834132 -0.02540599]"
+  },
+  {
+    "stage": "flip_segmenter",
+    "ok": true,
+    "detail": "mask_px=570 confidence=0.831 roi_bbox=(565, 326, 655, 416)"
+  },
+  {
+    "stage": "geometry",
+    "ok": true,
+    "detail": "n_raw=570 n_valid_depth=570 n_final=568 table_plane_found=False"
+  },
+  {
+    "stage": "grasp_planner",
+    "ok": true,
+    "detail": "grasp_width=0.0322m grasp_pos=[ 0.45751036 -0.08739832 -0.00947171] approach=[ 0.89873956 -0.43848284 -0.        ] closing=[ 0.43848284  0.89873956 -0.        ] up=[0. 0. 1.]"
+  },
+  {
+    "stage": "robot_controller:safe_high",
+    "ok": true,
+    "detail": "steps=7 pos_err=0.0036 rot_err=0.0467"
+  },
+  {
+    "stage": "robot_controller:side_pregrasp",
+    "ok": false,
+    "detail": "steps=150 pos_err=0.0384 rot_err=0.1962"
+  },
+  {
+    "stage": "outcome_check",
+    "ok": false,
+    "detail": "pos_before=[-0.08957643 -0.09394217  0.88937756] pos_after=[-0.08961123 -0.09387725  0.8908249 ] in_bin_xy=False controller_success=False"
+  }
+]
