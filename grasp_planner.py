@@ -306,12 +306,37 @@ def plan_side_grasp(
     normal = np.asarray(marker_outward_normal_robot, dtype=float)
     normal_horiz = normal - np.dot(normal, up) * up
     normal_horiz_norm = np.linalg.norm(normal_horiz)
-    if normal_horiz_norm < 1e-2:
-        return None, GraspFailure(
-            "degenerate_marker_normal",
-            f"marker outward normal is nearly parallel to table-up ({normal}) — cannot derive a horizontal approach",
-        )
-    outward_normal = normal_horiz / normal_horiz_norm
+
+    # Reliability floor raised from an earlier 1e-2 to 0.35: confirmed on
+    # a real run (not just in-sandbox) that solvePnP/IPPE_SQUARE can, for
+    # a small (~15px) or grazing-angle marker, converge to a rotation
+    # whose normal is mostly VERTICAL (e.g. dominant Z component) even
+    # though the marker is glued to a vertical bottle wall and physically
+    # cannot be facing that way — a rotation-estimation artifact (the
+    # translation/tvec stays well-conditioned; it's specifically the
+    # small-marker rotation solve that's unreliable), not a scene bug. At
+    # 1e-2 that case still "passed" the check and produced a horizontal
+    # direction dominated by noise (observed: a bogus 0.167m grasp-width
+    # estimate from an essentially random closing axis). Below this
+    # floor, fall back to a rotation-independent estimate: the vector
+    # from the visible point cloud's own centroid toward the marker's
+    # position. The marker sits on the object's camera-facing surface, so
+    # "centroid -> marker" points outward in roughly the same direction
+    # the true surface normal would — and only depends on solvePnP's
+    # TRANSLATION (tvec, via marker_pos_robot), never its rotation.
+    if normal_horiz_norm < 0.35:
+        centroid_xy = points_robot[:, :2].mean(axis=0)
+        fallback_horiz = np.asarray(marker_pos_robot, dtype=float)[:2] - centroid_xy
+        fallback_norm = np.linalg.norm(fallback_horiz)
+        if fallback_norm < 1e-2:
+            return None, GraspFailure(
+                "degenerate_marker_normal",
+                f"marker outward normal is unreliable ({normal}, horiz_norm={normal_horiz_norm:.3f}) "
+                f"and the centroid->marker fallback is also degenerate (norm={fallback_norm:.4f})",
+            )
+        outward_normal = np.array([fallback_horiz[0] / fallback_norm, fallback_horiz[1] / fallback_norm, 0.0])
+    else:
+        outward_normal = normal_horiz / normal_horiz_norm
 
     # Step 4: direction of TRAVEL toward the object (opposite the outward normal).
     approach_direction = -outward_normal
