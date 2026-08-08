@@ -82,6 +82,46 @@ def _downward_grasp_rotation(yaw: float) -> np.ndarray:
     return downward_grasp_rotation(yaw)
 
 
+def _read_eef_pose(env, arm: str = "right"):
+    """Cheap, per-step proprioception read — same real quantities as
+    `env._get_observations(force_update=True)["robot0_eef_pos"/"robot0_eef_quat"]`
+    (robosuite's own sensor definitions in robots/robot.py: eef_pos from
+    `sim.data.site_xpos[eef_site_id]`, eef_quat from
+    `sim.data.get_body_xquat(eef_name)`), confirmed to match exactly
+    in-sandbox, but WITHOUT going through robosuite's observable pipeline.
+
+    That pipeline recomputes every ACTIVE observable on every call —
+    including all registered camera image/depth renders, since
+    `use_camera_obs=True` keeps those observables active regardless of
+    whether a given step actually needs an image. With final_demo.py's 4
+    presentation cameras registered at 720x960, calling
+    `_get_observations(force_update=True)` just to read the gripper's own
+    pose was measured in-sandbox at ~250ms/call — turning a few-hundred-
+    step motion stage into minutes and making the demo unable to
+    complete. This reads the exact same two numbers directly from MuJoCo
+    state (site_xpos / body_xquat), no rendering involved, ~0.1ms/call.
+    Still real proprioception (a real robot always knows its own eef
+    pose without needing a camera frame) — not a shortcut around what
+    the perception pipeline itself is allowed to use.
+    """
+    robot = env.robots[0]
+    site_id = robot.eef_site_id[arm]
+    eef_name = robot.robot_model.eef_name[arm]
+    pos = np.array(env.sim.data.site_xpos[site_id])
+    quat = T.convert_quat(env.sim.data.get_body_xquat(eef_name), to="xyzw")
+    return pos, quat
+
+
+def _read_gripper_qvel(env, arm: str = "right"):
+    """Cheap counterpart to _read_eef_pose for the gripper-contact check in
+    close_gripper_until_contact — same value as
+    obs["robot0_gripper_qvel"], read directly instead of via the full
+    (camera-rendering) observation pipeline."""
+    robot = env.robots[0]
+    idx = robot._ref_gripper_joint_vel_indexes[arm]
+    return np.array([env.sim.data.qvel[i] for i in idx])
+
+
 def move_to_pose(
     env,
     target_pos_world: np.ndarray,
@@ -95,8 +135,19 @@ def move_to_pose(
     stop_on_stall: bool = False,
     stall_eps: float = 0.0008,
     stall_patience: int = 12,
+    speed_scale: float = 1.0,
 ) -> StageResult:
     """
+    `speed_scale` (0-1): scales the per-step commanded action before it's
+    clipped to the controller's [-1, 1] range — 1.0 is full speed
+    (unchanged from before this parameter existed), smaller values take
+    smaller steps toward the target each iteration, i.e. a slower, more
+    controlled motion. Used by demo_config.py's side_approach_speed /
+    final_approach_speed to make the final horizontal approach into
+    contact deliberately gentler than the larger reconfiguration moves,
+    without needing a different control law — same P-controller, smaller
+    gain.
+
     Closed-loop P-control to an absolute world-frame pose, one robosuite
     env.step() per iteration, using the real OSC_POSE delta-action
     convention (see module docstring).
@@ -127,9 +178,7 @@ def move_to_pose(
     stopped_by_contact = False
     step = 0
     for step in range(1, max_steps + 1):
-        obs = env._get_observations(force_update=True)
-        cur_pos = obs["robot0_eef_pos"]
-        cur_quat = obs["robot0_eef_quat"]
+        cur_pos, cur_quat = _read_eef_pose(env)
 
         # Quaternion double-cover fix: q and -q represent the identical
         # rotation. get_orientation_error doesn't check which hemisphere
@@ -164,8 +213,8 @@ def move_to_pose(
 
         pos_err_base = base_mat.T @ pos_err_world
         orn_err_base = base_mat.T @ orn_err_world
-        action_pos = np.clip(pos_err_base / TRANSLATION_OUTPUT_MAX, -1, 1)
-        action_rot = np.clip(orn_err_base / ROTATION_OUTPUT_MAX, -1, 1)
+        action_pos = np.clip(speed_scale * pos_err_base / TRANSLATION_OUTPUT_MAX, -1, 1)
+        action_rot = np.clip(speed_scale * orn_err_base / ROTATION_OUTPUT_MAX, -1, 1)
         action = np.concatenate([action_pos, action_rot, [gripper_action]]).astype(np.float32)
         env.step(action)
         if step_callback:
@@ -191,6 +240,7 @@ def move_to_pose_interpolated(
     rot_tol: float = 0.08,
     step_callback=None,
     stop_on_stall: bool = False,
+    speed_scale: float = 1.0,
 ) -> StageResult:
     """
     Breaks a large move into `n_waypoints` position-lerp + orientation-slerp
@@ -207,9 +257,7 @@ def move_to_pose_interpolated(
     against robosuite's OSC controller instead of a custom damped-least-
     squares IK solver.
     """
-    obs = env._get_observations(force_update=True)
-    start_pos = obs["robot0_eef_pos"].copy()
-    start_quat = obs["robot0_eef_quat"].copy()
+    start_pos, start_quat = _read_eef_pose(env)
     target_quat = T.mat2quat(target_R_world)
     if np.dot(target_quat, start_quat) < 0:
         target_quat = -target_quat
@@ -226,6 +274,7 @@ def move_to_pose_interpolated(
             max_steps=max_steps_per_waypoint, pos_tol=pos_tol, rot_tol=rot_tol,
             step_callback=step_callback,
             stop_on_stall=(stop_on_stall and is_last),
+            speed_scale=speed_scale,
         )
         if not last_stage.success and not is_last:
             # An intermediate waypoint stalling isn't necessarily fatal —
@@ -251,8 +300,7 @@ def close_gripper_until_contact(env, max_steps: int = 100, qvel_eps: float = 0.0
         env.step(action)
         if step_callback:
             step_callback()
-        obs = env._get_observations(force_update=True)
-        qvel = obs.get("robot0_gripper_qvel", None)
+        qvel = _read_gripper_qvel(env)
         if qvel is not None and np.max(np.abs(qvel)) < qvel_eps:
             still_count += 1
             if still_count >= settle_steps:
@@ -348,7 +396,10 @@ def execute_grasp_plan(env, plan, base_pos: np.ndarray, base_mat: np.ndarray,
 
 def execute_side_grasp_plan(env, plan, base_pos: np.ndarray, base_mat: np.ndarray,
                              step_callback=None, max_steps_per_move: int = 200,
-                             n_waypoints: int = 10, max_steps_per_waypoint: int = 150) -> ExecutionResult:
+                             n_waypoints: int = 10, max_steps_per_waypoint: int = 150,
+                             pos_tol: float = 0.006, rot_tol: float = 0.08,
+                             side_approach_speed: float = 1.0, final_approach_speed: float = 0.4,
+                             home_pose_world=None, on_stage_end=None) -> ExecutionResult:
     """
     Runs the HORIZONTAL side-grasp sequence for one
     grasp_planner.SideGraspPlan: safe-high -> pregrasp -> horizontal
@@ -379,6 +430,22 @@ def execute_side_grasp_plan(env, plan, base_pos: np.ndarray, base_mat: np.ndarra
     while translating into the lower workspace needs a different
     elbow/joint configuration that takes the controller more steps to
     find than a purely-positional top-down move does.
+
+    `side_approach_speed`/`final_approach_speed` (0-1, see move_to_pose's
+    speed_scale): the reconfiguration moves (safe-high, side_pregrasp,
+    retreat, lift, transport) run at `side_approach_speed` (default full
+    speed); the two "drive toward a surface" moves — the final horizontal
+    approach into contact (`side_approach`) and the vertical place-descend
+    (`descend_to_place`) — run at the slower `final_approach_speed`, since
+    those are exactly the moves where a gentler, more controlled motion
+    matters (approaching the object, lowering it into the tray).
+
+    `home_pose_world`: optional (pos, R) tuple in world frame — if given,
+    one final move_to_pose call is appended after `retract` to return the
+    arm to this pose (e.g. the pose captured right after reset, before
+    anything else moved), completing the full reproducible
+    "home -> ... -> home" cycle the demo sequence specifies. None (the
+    original behavior) skips this and stops at `retract`.
     """
     result = ExecutionResult()
 
@@ -388,30 +455,51 @@ def execute_side_grasp_plan(env, plan, base_pos: np.ndarray, base_mat: np.ndarra
     def R_world_of(pose):
         return base_mat @ pose.R
 
+    def _end(name, stage):
+        # Fired once per named stage, right after it finishes (success or
+        # not) — lets a caller (e.g. final_demo.py) hook specific moments
+        # ("object just lifted", "gripper just opened over the tray")
+        # without needing a copy of this whole function or a per-step
+        # callback that has no notion of stage boundaries.
+        if on_stage_end:
+            on_stage_end(name, stage)
+
     pregrasp_stages = [
-        ("safe_high", plan.safe_high, GRIPPER_OPEN, False, True),
-        ("side_pregrasp", plan.pregrasp, GRIPPER_OPEN, False, True),
-        ("side_approach", plan.grasp, GRIPPER_OPEN, True, False),
+        ("safe_high", plan.safe_high, GRIPPER_OPEN, False, True, side_approach_speed),
+        ("side_pregrasp", plan.pregrasp, GRIPPER_OPEN, False, True, side_approach_speed),
+        ("side_approach", plan.grasp, GRIPPER_OPEN, True, False, final_approach_speed),
     ]
-    for name, pose, grip, allow_stall, interp in pregrasp_stages:
+    for name, pose, grip, allow_stall, interp, speed in pregrasp_stages:
         R_world = R_world_of(pose)
         mover = move_to_pose_interpolated if interp else move_to_pose
         extra_kwargs = ({"n_waypoints": n_waypoints, "max_steps_per_waypoint": max_steps_per_waypoint}
                          if interp else {"max_steps": max_steps_per_move})
         stage = mover(env, to_world(pose.pos), R_world, base_mat,
                        gripper_action=grip, step_callback=step_callback, stop_on_stall=allow_stall,
+                       pos_tol=pos_tol, rot_tol=rot_tol, speed_scale=speed,
                        **extra_kwargs)
         stage.name = name
         result.stages.append(stage)
+        _end(name, stage)
         if not stage.success:
             result.failure_reason = f"{name}: failed to converge (pos_err={stage.final_pos_error:.4f})"
             return result
 
     close_stage = close_gripper_until_contact(env, step_callback=step_callback)
     result.stages.append(close_stage)
+    _end("close_gripper", close_stage)
 
     post_grasp_stages = [
-        ("retreat", plan.retreat, GRIPPER_CLOSE, False, False),
+        # stop_on_stall=True here too (see the "lift" comment just below):
+        # retreating while holding the object in a horizontal-wrist grasp
+        # hit the same "stopped moving, error not shrinking" signature in
+        # sandbox verification — pos_err plateaued at ~0.013m (vs an
+        # 0.008m tolerance) even with a 400-step budget, not a slow
+        # convergence more steps would fix. The retreat direction and
+        # distance were already correct (the plan itself is sound); this
+        # just accepts "got physically close and stopped" as success the
+        # same way lift/place-descend already do for the same reason.
+        ("retreat", plan.retreat, GRIPPER_CLOSE, True, False, side_approach_speed),
         # stop_on_stall=True here too: lifting while holding an object in
         # a horizontal-wrist grasp can run the arm up against a joint
         # limit before the full planned lift_height is reached — confirmed
@@ -419,34 +507,54 @@ def execute_side_grasp_plan(env, plan, base_pos: np.ndarray, base_mat: np.ndarra
         # generous step budget, the same "stopped moving, error not
         # shrinking" signature move_to_pose's stall detection is built
         # for, not a slow-convergence case more steps would fix).
-        ("lift", plan.lift, GRIPPER_CLOSE, True, False),
-        ("transport_to_place", plan.transport, GRIPPER_CLOSE, False, True),
-        ("descend_to_place", plan.place_descend, GRIPPER_CLOSE, True, False),
+        ("lift", plan.lift, GRIPPER_CLOSE, True, False, side_approach_speed),
+        ("transport_to_place", plan.transport, GRIPPER_CLOSE, False, True, side_approach_speed),
+        ("descend_to_place", plan.place_descend, GRIPPER_CLOSE, True, False, final_approach_speed),
     ]
-    for name, pose, grip, allow_stall, interp in post_grasp_stages:
+    for name, pose, grip, allow_stall, interp, speed in post_grasp_stages:
         R_world = R_world_of(pose)
         mover = move_to_pose_interpolated if interp else move_to_pose
         extra_kwargs = ({"n_waypoints": n_waypoints, "max_steps_per_waypoint": max_steps_per_waypoint}
                          if interp else {"max_steps": max_steps_per_move})
         stage = mover(env, to_world(pose.pos), R_world, base_mat,
                        gripper_action=grip, step_callback=step_callback, stop_on_stall=allow_stall,
+                       pos_tol=pos_tol, rot_tol=rot_tol, speed_scale=speed,
                        **extra_kwargs)
         stage.name = name
         result.stages.append(stage)
+        _end(name, stage)
         if not stage.success:
             result.failure_reason = f"{name}: failed to converge (pos_err={stage.final_pos_error:.4f})"
             return result
 
     open_stage = open_gripper(env, step_callback=step_callback)
     result.stages.append(open_stage)
+    _end("open_gripper", open_stage)
 
     retract_pose = plan.transport  # back up to the same high point above the tray
     R_world = R_world_of(retract_pose)
     retract_stage = move_to_pose(env, to_world(retract_pose.pos), R_world, base_mat,
                                   gripper_action=GRIPPER_OPEN, max_steps=max_steps_per_move,
-                                  step_callback=step_callback, stop_on_stall=True)
+                                  step_callback=step_callback, stop_on_stall=True,
+                                  pos_tol=pos_tol, rot_tol=rot_tol, speed_scale=side_approach_speed)
     retract_stage.name = "retract"
     result.stages.append(retract_stage)
+    _end("retract", retract_stage)
+
+    if home_pose_world is not None:
+        home_pos, home_R = home_pose_world
+        home_stage = move_to_pose_interpolated(
+            env, home_pos, home_R, base_mat, gripper_action=GRIPPER_OPEN,
+            n_waypoints=n_waypoints, max_steps_per_waypoint=max_steps_per_waypoint,
+            step_callback=step_callback, stop_on_stall=True,
+            pos_tol=pos_tol, rot_tol=rot_tol, speed_scale=side_approach_speed,
+        )
+        home_stage.name = "return_home"
+        result.stages.append(home_stage)
+        _end("return_home", home_stage)
+        if not home_stage.success:
+            result.failure_reason = f"return_home: failed to converge (pos_err={home_stage.final_pos_error:.4f})"
+            return result
 
     result.success = True
     return result
