@@ -64,6 +64,16 @@ from robosuite.utils import camera_utils
 
 SIDE_CAMERA_NAME = "side_oblique_camera"
 
+# Presentation-only cameras — see PickPlaceEnv._add_presentation_cameras.
+# These exist purely for recording the four demo videos; NOTHING in
+# aruco_prompt.py / flip_segmenter.py / geometry.py / grasp_planner.py
+# ever reads from them, only SIDE_CAMERA_NAME above does. Kept as module
+# constants (not just literal strings scattered in scripts) so the demo
+# recording script and environment.py can't drift out of sync on names.
+OVERVIEW_CAMERA_NAME = "overview_camera"
+SIDE_CLOSEUP_CAMERA_NAME = "side_grasp_closeup_camera"
+PLACE_CLOSEUP_CAMERA_NAME = "place_closeup_camera"
+
 # Shared with the perception side (aruco_prompt.py) so both sides agree on
 # what dictionary/ID they're looking for. DICT_6X6_250 matches what the
 # existing pipeline (segment.py, pick_and_place_flip.py) already uses.
@@ -317,6 +327,7 @@ class PickPlaceEnv(ManipulationEnv):
         )
         mujoco_arena.set_origin([0, 0, 0])
         self._add_side_oblique_camera(mujoco_arena)
+        self._add_presentation_cameras(mujoco_arena)
 
         all_movable = self._build_movable_objects()
 
@@ -377,14 +388,23 @@ class PickPlaceEnv(ManipulationEnv):
         # used a "WoodRed" wood-grain texture) — a textured material
         # OVERRIDES rgba entirely in MuJoCo (same issue found and fixed
         # for the multi-object scene's shapes), so the wood texture was
-        # silently making the rgba value below irrelevant. Plain rgba
-        # with alpha<1 gives the translucent-blue-plastic-bottle look
-        # requested (see the reference photo) without that override.
+        # silently making the rgba value below irrelevant. Plain rgba,
+        # fully opaque (alpha=1): an earlier alpha=0.75 "translucent
+        # plastic" look was traced to a real perception bug — MuJoCo's
+        # rendered depth buffer for a semi-transparent geom partially
+        # reads through to whatever is behind it, so per-pixel depth
+        # under the object's own mask became a near-uniform smear across
+        # ~25cm instead of clustering on the object's true surface,
+        # which corrupted the point cloud (falsely huge bounding box,
+        # centroid dragged toward the background) and, downstream, the
+        # grasp plan. A real depth camera has the same problem with truly
+        # transparent glass but not with an opaque-looking bottle, so
+        # opaque rgba is the physically-honest choice here too.
         self.target_object = CylinderObject(
             name="target_object",
             size_min=self.target_object_size,
             size_max=self.target_object_size,
-            rgba=[0.35, 0.6, 0.85, 0.75],
+            rgba=[0.35, 0.6, 0.85, 1.0],
             material=None,
             rng=self.rng,
         )
@@ -436,6 +456,61 @@ class PickPlaceEnv(ManipulationEnv):
         camera.set("pos", " ".join(str(v) for v in cam_pos))
         camera.set("quat", " ".join(str(v) for v in quat))
         camera.set("fovy", "45")
+
+    def _add_named_camera(self, mujoco_arena, name, cam_pos, look_target, fovy=45):
+        """Shared helper — same mechanism _add_side_oblique_camera uses
+        (a plain <camera> element on the arena's worldbody), factored out
+        so the three presentation-only cameras below don't repeat it."""
+        quat = look_at_quat(cam_pos, look_target)
+        camera = ET.SubElement(mujoco_arena.worldbody, "camera")
+        camera.set("name", name)
+        camera.set("mode", "fixed")
+        camera.set("pos", " ".join(str(v) for v in cam_pos))
+        camera.set("quat", " ".join(str(v) for v in quat))
+        camera.set("fovy", str(fovy))
+
+    def _add_presentation_cameras(self, mujoco_arena):
+        """
+        Three RENDER-ONLY cameras for the four demo videos
+        (final_demo.py) — overview_camera, side_grasp_closeup_camera,
+        place_closeup_camera (module-level name constants above). None of
+        these are ever passed to aruco_prompt/flip_segmenter/geometry/
+        grasp_planner — only SIDE_CAMERA_NAME (side_oblique_camera) feeds
+        the actual perception pipeline; these three exist purely so
+        final_demo.py can render presentation footage of the same
+        deterministic rollout from other angles.
+        """
+        table_center = self.table_offset
+        bin_xy_offset = np.array([0.22, 0.0])  # matches the bin's own placement formula below
+
+        # Wide view: pulled back and elevated further than the perception
+        # camera, roughly opposite side of the table so both the arm's
+        # full reach and the destination bin are in frame together.
+        overview_pos = table_center + np.array([-0.9, -0.9, 0.85])
+        overview_target = table_center + np.array([0.05, 0.0, 0.05])
+        self._add_named_camera(mujoco_arena, OVERVIEW_CAMERA_NAME, overview_pos, overview_target, fovy=50)
+
+        # Close side view: same general azimuth as the perception camera
+        # (so it's looking at the same marker-facing side of the
+        # cylinder) but pulled in much closer and lower, framed tightly
+        # on the object + the horizontal gripper approach path rather
+        # than the whole table.
+        side_azimuth = np.radians(self._CAM_AZIMUTH_DEG)
+        side_closeup_pos = table_center + np.array([
+            0.32 * np.cos(side_azimuth), 0.32 * np.sin(side_azimuth), 0.28,
+        ])
+        side_closeup_target = table_center + np.array([0.0, 0.0, 0.08])
+        self._add_named_camera(mujoco_arena, SIDE_CLOSEUP_CAMERA_NAME, side_closeup_pos, side_closeup_target, fovy=40)
+
+        # Place close-up: framed on the destination bin specifically,
+        # elevated and angled down at it — pulled back enough (vs an
+        # earlier, closer version) to keep headroom ABOVE the tray in
+        # frame too, since the gripper carries the object in from above
+        # during the actual placement motion, not just resting on the
+        # tray itself.
+        place_pos = table_center + np.array([bin_xy_offset[0] + 0.15, -0.45, 0.5])
+        place_target = table_center + np.array([bin_xy_offset[0], 0.0, self.table_full_size[2] / 2 + 0.12])
+        self._add_named_camera(mujoco_arena, PLACE_CLOSEUP_CAMERA_NAME, place_pos, place_target, fovy=45)
 
     def _add_aruco_decal(self, cyl_obj: CylinderObject):
         """
