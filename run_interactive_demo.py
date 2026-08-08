@@ -107,33 +107,6 @@ def run_interactive(object_shapes, target_marker_ids=None, seed=0, model_size="s
     return results
 
 
-def _install_render_hook():
-    """
-    side_grasp_pipeline.run_side_grasp_pipeline builds its own VideoRecorder
-    (imported from pipeline.py) and uses ITS maybe_capture as the
-    step_callback whenever record_video=True — there's no separate hook to
-    also call env.render() each step without either (a) duplicating
-    run_side_grasp_pipeline here, which the project's own instructions say
-    not to do ("do not rewrite working components unnecessarily"), or (b)
-    making VideoRecorder itself render when the env has an on-screen
-    viewer. (b) is the smaller, most localized change: VideoRecorder
-    already receives `env`, so it can check env.has_renderer /
-    env.viewer once and call env.render() from maybe_capture()
-    alongside its existing frame-capture — a no-op for every other
-    (headless) caller since has_renderer is False there.
-    """
-    from pipeline import VideoRecorder
-
-    _orig_maybe_capture = VideoRecorder.maybe_capture
-
-    def maybe_capture_and_render(self):
-        if getattr(self.env, "has_renderer", False):
-            self.env.render()
-        _orig_maybe_capture(self)
-
-    VideoRecorder.maybe_capture = maybe_capture_and_render
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--shapes", nargs="+", choices=list(MARKER_ID_BY_SHAPE), default=["cylinder"],
@@ -147,8 +120,6 @@ if __name__ == "__main__":
     parser.add_argument("--no-video", action="store_true", help="Skip saving .mp4 files (viewer window still works).")
     parser.add_argument("--from-config", action="store_true", help="Ignore the above flags and use config.yaml instead.")
     args = parser.parse_args()
-
-    _install_render_hook()
 
     if args.from_config:
         from config import load_config, target_marker_ids_from_config
