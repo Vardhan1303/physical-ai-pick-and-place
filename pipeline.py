@@ -120,7 +120,7 @@ class VideoRecorder:
         # that ambiguity, at the cost of being somewhat more expensive
         # per call — fine here since capture_every already throttles to
         # every 4th step, not every step.
-        frame, _depth = self.env.get_camera_rgbd(camera_name=self.camera_name)
+        frame = self.env.get_camera_rgb(camera_name=self.camera_name)
         bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         if bgr.shape[1] != self.width or bgr.shape[0] != self.height:
             bgr = cv2.resize(bgr, (self.width, self.height))
