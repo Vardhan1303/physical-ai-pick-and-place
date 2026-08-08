@@ -118,7 +118,7 @@ def direction_world_to_robot_base(v_world: np.ndarray, base_mat: np.ndarray) -> 
     return (np.asarray(v_world, dtype=np.float64) @ base_mat).astype(np.float32)
 
 
-def remove_statistical_outliers(points: np.ndarray, mad_k: float = 6.0) -> np.ndarray:
+def remove_statistical_outliers(points: np.ndarray, mad_k: float = 4.0) -> np.ndarray:
     """
     Removes points far from the cloud's robust center — standard RGB-D
     preprocessing (synthetic and real depth sensors both produce "flying
@@ -131,6 +131,16 @@ def remove_statistical_outliers(points: np.ndarray, mad_k: float = 6.0) -> np.nd
     5th-95th percentile of a raw deprojected cloud clustered tightly
     (~4cm spread, matching the object's real size), but the min/max
     spanned ~30cm — a few edge pixels unprojecting to wildly wrong depth.
+
+    mad_k tightened from 6.0 to 4.0 after final_demo.py verification
+    (seed=0) turned up a residual ~15-point stray cluster (depth ~0.93-1.0m
+    vs. the object's true ~0.77-0.88m) that mad_k=6.0 didn't catch — small
+    enough not to change n_after_plane_removal much, but large enough to
+    drag the estimated object centroid and height off. The bulk of that
+    contamination was actually a separate bug (a semi-transparent object
+    material letting depth read through to the background — see
+    environment.py's target_object rgba comment); mad_k=4.0 is kept as a
+    second line of defense for whatever ordinary edge-pixel noise remains.
     """
     if len(points) < 10:
         return points
@@ -143,7 +153,8 @@ def remove_statistical_outliers(points: np.ndarray, mad_k: float = 6.0) -> np.nd
 
 def fit_table_plane_ransac(points_world: np.ndarray, n_iters: int = 200, dist_thresh: float = 0.005,
                             rng: Optional[np.random.Generator] = None,
-                            table_height_hint: Optional[float] = None, height_tol: float = 0.02):
+                            table_height_hint: Optional[float] = None, height_tol: float = 0.02,
+                            min_verticality: float = 0.9):
     """
     Minimal RANSAC plane fit (no external deps). Used to find and remove
     the tabletop plane from a target-ish point cloud that may still
@@ -157,14 +168,29 @@ def fit_table_plane_ransac(points_world: np.ndarray, n_iters: int = 200, dist_th
     not per-object ground truth, and is used only to VALIDATE that a
     RANSAC-fitted plane is plausibly the table and not something else.
 
-    Without this check, RANSAC will happily fit "a plane" to almost any
-    small, nearly-flat masked region — including just the object's own
+    Without the height check, RANSAC will happily fit "a plane" to almost
+    any small, nearly-flat masked region — including just the object's own
     flat top surface, if FLIP's mask under-segments to mostly that (which
     it did during Phase 4 verification: a mask covering only the marker's
     immediate area is itself nearly planar, and naive RANSAC then
     "removed the table" by deleting ~99% of the already-small cloud,
     leaving 2 stray points). Rejecting fits whose mean height isn't near
     the known table height fixes this without touching the object.
+
+    `min_verticality`: a real table is a HORIZONTAL surface — its normal
+    must be close to +/-Z (|normal . z_hat| near 1). The height check
+    alone isn't sufficient: for a short object, a narrow masked strip of
+    its own curved SIDE is locally near-planar too (a cylinder's surface,
+    sampled over a small patch, looks like a slanted plane), and that
+    slanted plane's mean height can still land within `height_tol` of the
+    table simply because the object sits close to the table. Confirmed
+    empirically (final_demo.py, seed=0): a plane with normal
+    [-0.55, -0.81, -0.21] — clearly a sideways-facing surface, not a
+    tabletop — passed the height check and got removed as "the table",
+    stripping most of the real object and leaving a ~500-point
+    contaminated remainder with a 20cm+ bounding box for a ~5cm cylinder.
+    Rejecting non-vertical-normal candidates fixes this without weakening
+    the height check that the original comment above still needs.
     """
     if len(points_world) < 10:
         return None
@@ -181,6 +207,8 @@ def fit_table_plane_ransac(points_world: np.ndarray, n_iters: int = 200, dist_th
         if norm < 1e-9:
             continue
         normal = normal / norm
+        if abs(normal[2]) < min_verticality:
+            continue  # not close to horizontal — can't be the tabletop
         d = -normal.dot(p0)
         dist = np.abs(points_world @ normal + d)
         inlier_mask = dist < dist_thresh
@@ -250,6 +278,38 @@ def build_target_point_cloud(
         n_after_plane_removal=len(points_world_filtered),
         table_plane=table_plane,
     )
+
+
+def world_to_camera(points_world: np.ndarray, cam_to_world_T: np.ndarray) -> np.ndarray:
+    """Inverse of camera_to_world — world-frame points -> camera frame.
+    PRESENTATION-ONLY: used by final_demo.py to project the planned grasp
+    axes (computed in robot-base frame) back into image pixels for the
+    perception-camera debug video overlay. The actual perception pipeline
+    never calls this; it only ever goes camera->world->robot-base,
+    forward, never back."""
+    if len(points_world) == 0:
+        return points_world
+    world_to_cam_T = np.linalg.inv(cam_to_world_T)
+    ones = np.ones((points_world.shape[0], 1), dtype=np.float32)
+    homog = np.concatenate([points_world, ones], axis=1)
+    cam = (world_to_cam_T @ homog.T).T
+    return cam[:, :3].astype(np.float32)
+
+
+def project_to_pixels(points_cam: np.ndarray, K: np.ndarray):
+    """Pinhole projection, camera-frame points -> (u, v) pixel coords —
+    presentation-only inverse of deproject_camera's unprojection. Returns
+    (uv (N,2), valid_mask (N,) — False where a point is behind the camera)."""
+    if len(points_cam) == 0:
+        return np.zeros((0, 2), dtype=np.float32), np.zeros((0,), dtype=bool)
+    z = points_cam[:, 2]
+    valid = z > 1e-6
+    fx, fy = K[0, 0], K[1, 1]
+    cx, cy = K[0, 2], K[1, 2]
+    uv = np.full((len(points_cam), 2), np.nan, dtype=np.float32)
+    uv[valid, 0] = points_cam[valid, 0] * fx / z[valid] + cx
+    uv[valid, 1] = points_cam[valid, 1] * fy / z[valid] + cy
+    return uv, valid
 
 
 def get_robot_base_transform(env):
