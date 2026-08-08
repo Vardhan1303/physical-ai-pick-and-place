@@ -95,7 +95,7 @@ def ensure_marker_png(marker_id: int, dict_name: str = ARUCO_DICT_NAME,
     MARKERS_DIR.mkdir(parents=True, exist_ok=True)
     path = MARKERS_DIR / f"target_marker_id{marker_id}.png"
     if path.exists():
-        return str(path)
+        return path.as_posix()
 
     aruco_dict = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, dict_name))
     pattern = cv2.aruco.generateImageMarker(aruco_dict, marker_id, marker_px, borderBits=1)
@@ -110,7 +110,18 @@ def ensure_marker_png(marker_id: int, dict_name: str = ARUCO_DICT_NAME,
     # was added.
     canvas_rgb = cv2.cvtColor(canvas, cv2.COLOR_GRAY2BGR)
     cv2.imwrite(str(path), canvas_rgb)
-    return str(path)
+    # robosuite.utils.mjcf_utils.CustomMaterial decides "is this a file
+    # path or a named texture from its own catalog" via a literal
+    # `"/" in texture` check (see its source) — a Windows backslash path
+    # (what str(path) gives on Windows) fails that check and gets treated
+    # as an invalid named-texture lookup instead ("Requested invalid
+    # texture" AssertionError — hit for real on the user's Windows
+    # machine, never surfaced in the Linux sandbox where str(path) is
+    # already forward-slashed). .as_posix() always returns forward
+    # slashes, satisfying robosuite's check on every OS; MuJoCo's own
+    # asset loader accepts forward-slash paths on Windows too, so this is
+    # safe in both directions.
+    return path.as_posix()
 
 
 def look_at_quat(cam_pos, target, world_up=(0, 0, 1)):
