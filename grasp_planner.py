@@ -217,34 +217,24 @@ def axes_to_gripper_rotation(approach_direction: np.ndarray, closing_direction: 
     Builds a robot-base-frame gripper rotation matrix from two physically
     meaningful axes, instead of a fixed/hard-coded Euler angle.
 
-    Axis convention verified against the EXISTING top-down grasp math
-    (downward_grasp_rotation above) rather than assumed: expanding
-    `Rz(yaw) @ Rx180` by hand shows that in whatever final orientation the
-    gripper is commanded to, its own local Z axis always ends up equal to
-    the direction of travel/approach, and its local X axis always ends up
-    equal to the direction the fingers close along (confirmed numerically
-    too — see THESIS_PLAN.md's Phase-1-extension notes). Reusing that same
-    convention here means side-grasp poses compose correctly with the
-    EXISTING move_to_pose/OSC controller code in robot_controller.py
-    without any changes there.
+    The Panda gripper's finger-separation axis is encoded as its local Y
+    axis in the robot's tool frame, not local X. For a side grasp, this
+    means the gripper should approach along local Z and close along local Y.
 
     local Z = approach_direction (tool axis, direction of travel toward
         the object)
-    local X = closing_direction (finger-separation axis)
-    local Y = Z x X (completes a right-handed frame — not necessarily
-        "up"; for a horizontal approach, Y ends up horizontal too, the
-        same way X and Y both end up horizontal in the top-down case when
-        Z points straight down)
+    local Y = closing_direction (finger-separation axis)
+    local X = Y x Z (completes a right-handed frame)
     """
     z = np.asarray(approach_direction, dtype=float)
     z = z / np.linalg.norm(z)
-    x = np.asarray(closing_direction, dtype=float)
-    x = x - np.dot(x, z) * z  # Gram-Schmidt: strip any approach-axis component, guard against
-    x_norm = np.linalg.norm(x)  # slightly non-orthogonal inputs rather than assuming perfection
-    if x_norm < 1e-6:
+    y = np.asarray(closing_direction, dtype=float)
+    y = y - np.dot(y, z) * z  # Gram-Schmidt: strip any approach-axis component, guard against
+    y_norm = np.linalg.norm(y)  # slightly non-orthogonal inputs rather than assuming perfection
+    if y_norm < 1e-6:
         raise ValueError("closing_direction is parallel to approach_direction — cannot build a frame")
-    x = x / x_norm
-    y = np.cross(z, x)
+    y = y / y_norm
+    x = np.cross(y, z)
     return np.column_stack([x, y, z])
 
 
@@ -464,7 +454,24 @@ def plan_side_grasp(
     safe_high_z = table_z + safe_height_above_table
     safe_high_pos = np.array([pregrasp_pos[0], pregrasp_pos[1], safe_high_z])
 
-    release_z = grasp_z if place_height is None else place_height
+    # release_z is a TCP target, but `place_height` describes where the
+    # OBJECT should end up (the bin's top surface) — and for this
+    # horizontal side-grasp, the object hangs BELOW the TCP by
+    # `grasp_z - z_min` (the same quantity height_fraction's own comment
+    # above describes: we deliberately grasp near the object's top, not
+    # its centroid). Targeting the TCP straight at place_height therefore
+    # asks the object's own bottom to end up below the bin's floor, which
+    # is physically impossible — confirmed in-sandbox: descend_to_place
+    # consistently stopped ~8-9cm short on contact (stopped_by_contact
+    # correctly caught this as "hit something," but the object was still
+    # released from ~8-9cm above the bin, which is enough of a drop for a
+    # narrow cylinder to bounce/roll out of the shallow bin instead of
+    # landing inside it). Adding the hang-below offset here means the
+    # commanded TCP target itself already accounts for it, so contact
+    # (and release) happens close to the intended low height.
+    hang_below = max(0.0, grasp_z - z_min)
+    release_surface_z = grasp_z if place_height is None else place_height
+    release_z = release_surface_z + hang_below
     transport_pos = np.array([place_xy[0], place_xy[1], lift_pos[2]])
     place_descend_pos = np.array([place_xy[0], place_xy[1], release_z])
 
