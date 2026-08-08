@@ -39,7 +39,20 @@ SETTLE_STEPS = 30
 
 
 def run_interactive(seed=0, model_size="small", max_steps_per_move=400,
-                     record_video=True, run_dir="runs/interactive"):
+                     record_video=True, run_dir=None):
+    if run_dir is None:
+        # Timestamped, not a fixed "runs/interactive" — a fixed path was
+        # silently reused across runs, so a run that failed BEFORE
+        # reaching video recording (e.g. grasp_planner rejecting the
+        # plan, which happens before any VideoRecorder is even
+        # constructed — see run_side_grasp_pipeline) would leave last
+        # run's video sitting there looking like it belonged to the new,
+        # failed attempt. Confirmed this is what happened on a run that
+        # only logged through grasp_planner:FAILED and never reached
+        # robot_controller at all.
+        import datetime
+        ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        run_dir = f"runs/interactive_{ts}"
     print(f"Building scene (single bottle, seed={seed})...")
     print("Opening the MuJoCo viewer window now — if nothing appears, make sure "
           "you're running this on a machine with a display attached (not over a "

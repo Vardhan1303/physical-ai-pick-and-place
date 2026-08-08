@@ -325,6 +325,26 @@ def plan_side_grasp(
     # the true surface normal would — and only depends on solvePnP's
     # TRANSLATION (tvec, via marker_pos_robot), never its rotation.
     if normal_horiz_norm < 0.35:
+        # This fallback's own signal (the point cloud's centroid, and
+        # everything derived from it downstream — grasp height, width)
+        # gets noisy fast on a sparse cloud. Confirmed on a real run: a
+        # 163-point cloud (already sparse — most of an over-grown ROI's
+        # mask had been correctly classified as table and removed) fed
+        # through this exact fallback still produced a 0.285m width
+        # estimate, nonsense for a hand-sized bottle. Rather than trust a
+        # geometric estimate built on too little data, fail cleanly here
+        # — the caller (side_grasp_pipeline.py) already logs+aborts
+        # before any robot motion on a GraspFailure, so this is a safe
+        # "ask for a better view" outcome, not a silent wrong answer.
+        MIN_POINTS_FOR_FALLBACK = 80
+        if len(points_robot) < MIN_POINTS_FOR_FALLBACK:
+            return None, GraspFailure(
+                "unreliable_normal_and_sparse_cloud",
+                f"marker outward normal is unreliable ({normal}, horiz_norm={normal_horiz_norm:.3f}) and "
+                f"the point cloud is too sparse ({len(points_robot)} pts < {MIN_POINTS_FOR_FALLBACK}) to "
+                f"trust the centroid-based fallback direction — likely an over-grown FLIP ROI or a "
+                f"too-small/grazing marker view; try a different viewpoint or object position.",
+            )
         centroid_xy = points_robot[:, :2].mean(axis=0)
         fallback_horiz = np.asarray(marker_pos_robot, dtype=float)[:2] - centroid_xy
         fallback_norm = np.linalg.norm(fallback_horiz)

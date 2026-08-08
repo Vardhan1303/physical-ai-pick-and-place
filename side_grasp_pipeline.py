@@ -43,7 +43,7 @@ macros.IMAGE_CONVENTION = "opencv"
 
 from environment import PickPlaceEnv, SIDE_CAMERA_NAME, TARGET_MARKER_ID
 from aruco_prompt import get_target_prompt, draw_debug_overlay, estimate_marker_pose
-from flip_segmenter import FlipTargetSegmenter, ROI_TALL_OBJECT_MIN_HALF_PX
+from flip_segmenter import FlipTargetSegmenter, ROI_TALL_OBJECT_MIN_HALF_PX, ROI_MIN_HALF_PX, ROI_SCALE
 from geometry import (
     build_target_point_cloud, get_robot_base_transform,
     camera_to_world, world_to_robot_base,
@@ -262,11 +262,29 @@ def run_side_grasp_pipeline(
         too_small = 0 < n_fg_initial < 6 * marker_area_px
         if n_fg_initial > 0 and (_touches_border(seg) or too_small):
             reason = "touched ROI border" if _touches_border(seg) else "suspiciously small vs marker size"
-            log.log("flip_segmenter:regrow", f"initial mask {reason} (mask_px={n_fg_initial}) — retrying with a larger ROI")
+            # Grow PROPORTIONALLY to the initial ROI (1.6x), capped at
+            # ROI_TALL_OBJECT_MIN_HALF_PX, rather than always jumping
+            # straight to that fixed absolute floor. Confirmed on a real
+            # run this matters: for a small marker (side_px~15.5, initial
+            # half~36px) jumping straight to a 120px half-width is a ~3.3x
+            # linear (>10x area) jump in one step, on a small/close-up
+            # single-object scene enlarging the crop that much can sweep
+            # in table/background/robot-gripper pixels well beyond the
+            # actual object — RANSAC then (correctly) classifies most of
+            # that as "table" and removes it, leaving a tiny, unreliable
+            # leftover point cloud (observed: 163 points from an 5810px
+            # mask) that produces a nonsensical grasp-width estimate. A
+            # smaller, proportional step reduces that overshoot risk while
+            # still fixing genuine under-segmentation.
+            initial_half = max(ROI_MIN_HALF_PX, detection.side_length_px * ROI_SCALE)
+            grown_half = min(ROI_TALL_OBJECT_MIN_HALF_PX, initial_half * 1.6)
+            log.log("flip_segmenter:regrow",
+                     f"initial mask {reason} (mask_px={n_fg_initial}) — retrying with half_px={grown_half:.0f} "
+                     f"(was {initial_half:.0f})")
             seg = segmenter.segment_from_prompt(
                 rgb, detection.center_px, marker_side_px=detection.side_length_px,
                 debug_dir=run_dir, debug_tag="03_flip_grown",
-                min_half_px=ROI_TALL_OBJECT_MIN_HALF_PX,
+                min_half_px=grown_half,
             )
         timings["flip_segmenter"] = time.time() - t0
         n_fg = int((seg.mask_full > 0).sum())
