@@ -1,0 +1,266 @@
+{
+  "config": {
+    "gripper_open_margin": 0.015,
+    "min_gripper_opening": 0.01,
+    "max_gripper_opening": 0.08,
+    "grasp_height_ratio": 0.7,
+    "pregrasp_standoff": 0.12,
+    "lift_height": 0.08,
+    "place_height": null,
+    "safe_waypoint_height": 0.2,
+    "side_approach_speed": 1.0,
+    "final_approach_speed": 0.4,
+    "controller_position_tolerance": 0.008,
+    "controller_orientation_tolerance": 0.08,
+    "model_size": "small",
+    "seed": 0
+  },
+  "stages": [
+    {
+      "stage": "reset",
+      "t": 1786196702.799,
+      "seed": 0,
+      "settle_steps": 30
+    },
+    {
+      "stage": "home_pose",
+      "t": 1786196702.849,
+      "pos": [
+        -0.105,
+        -0.0088,
+        1.0153
+      ]
+    },
+    {
+      "stage": "capture",
+      "t": 1786196702.913,
+      "rgb_shape": [
+        720,
+        960,
+        3
+      ],
+      "depth_range": [
+        0.211,
+        4.533
+      ],
+      "marker_size_m": 0.0179,
+      "dt": 0.065
+    },
+    {
+      "stage": "aruco_prompt",
+      "t": 1786196702.939,
+      "success": true,
+      "marker_id": 42,
+      "center_px": [
+        610.5,
+        371.0
+      ],
+      "side_px": 16.0,
+      "dt": 0.025
+    },
+    {
+      "stage": "marker_pose",
+      "t": 1786196702.939,
+      "pos_robot": [
+        0.48069998621940613,
+        -0.10689999908208847,
+        -0.05490000173449516
+      ],
+      "outward_normal_robot": [
+        -0.8863000273704529,
+        0.46299999952316284,
+        0.01140000019222498
+      ]
+    },
+    {
+      "stage": "flip_segmenter",
+      "t": 1786196703.662,
+      "success": true,
+      "mask_area_px": 7034,
+      "confidence": 0.909,
+      "roi_bbox": [
+        538,
+        299,
+        682,
+        443
+      ],
+      "regrown": true,
+      "inference_time_s": 0.699
+    },
+    {
+      "stage": "point_cloud",
+      "t": 1786196703.671,
+      "n_raw": 7034,
+      "n_valid_depth": 7034,
+      "n_after_plane_removal": 7021,
+      "table_plane_found": false,
+      "dt": 0.009
+    },
+    {
+      "stage": "point_cloud_stats",
+      "t": 1786196703.672,
+      "estimated_center_robot": [
+        0.4544000029563904,
+        -0.0820000022649765,
+        -0.02199999988079071
+      ]
+    },
+    {
+      "stage": "grasp_planner",
+      "t": 1786196703.673,
+      "success": true,
+      "estimated_width": 0.0577,
+      "gripper_opening_target": 0.0577,
+      "grasp_pos": [
+        0.4734,
+        -0.0919,
+        0.0541
+      ],
+      "pregrasp_pos": [
+        0.367,
+        -0.0363,
+        0.0541
+      ],
+      "lift_pos": [
+        0.3847,
+        -0.0456,
+        0.1341
+      ],
+      "place_pos": [
+        0.78,
+        0.0,
+        0.1147
+      ],
+      "dt": 0.001
+    },
+    {
+      "stage": "motion_stage",
+      "t": 1786196710.459,
+      "name": "safe_high",
+      "success": true,
+      "steps": 7,
+      "pos_err": 0.002,
+      "rot_err": 0.073,
+      "stopped_by_contact": false
+    },
+    {
+      "stage": "motion_stage",
+      "t": 1786196712.66,
+      "name": "side_pregrasp",
+      "success": true,
+      "steps": 9,
+      "pos_err": 0.0079,
+      "rot_err": 0.0348,
+      "stopped_by_contact": false
+    },
+    {
+      "stage": "motion_stage",
+      "t": 1786196714.649,
+      "name": "side_approach",
+      "success": true,
+      "steps": 24,
+      "pos_err": 0.0076,
+      "rot_err": 0.0086,
+      "stopped_by_contact": false
+    },
+    {
+      "stage": "motion_stage",
+      "t": 1786196715.959,
+      "name": "close_gripper",
+      "success": true,
+      "steps": 16,
+      "pos_err": 0.0,
+      "rot_err": 0.0,
+      "stopped_by_contact": false
+    },
+    {
+      "stage": "motion_stage",
+      "t": 1786196717.642,
+      "name": "retreat",
+      "success": true,
+      "steps": 23,
+      "pos_err": 0.0095,
+      "rot_err": 0.0133,
+      "stopped_by_contact": true
+    },
+    {
+      "stage": "motion_stage",
+      "t": 1786196718.396,
+      "name": "lift",
+      "success": true,
+      "steps": 12,
+      "pos_err": 0.0052,
+      "rot_err": 0.0068,
+      "stopped_by_contact": false
+    },
+    {
+      "stage": "motion_stage",
+      "t": 1786196722.919,
+      "name": "transport_to_place",
+      "success": true,
+      "steps": 7,
+      "pos_err": 0.0072,
+      "rot_err": 0.0012,
+      "stopped_by_contact": false
+    },
+    {
+      "stage": "motion_stage",
+      "t": 1786196723.384,
+      "name": "descend_to_place",
+      "success": true,
+      "steps": 7,
+      "pos_err": 0.0078,
+      "rot_err": 0.0077,
+      "stopped_by_contact": false
+    },
+    {
+      "stage": "motion_stage",
+      "t": 1786196726.028,
+      "name": "open_gripper",
+      "success": true,
+      "steps": 40,
+      "pos_err": 0.0,
+      "rot_err": 0.0,
+      "stopped_by_contact": false
+    },
+    {
+      "stage": "motion_stage",
+      "t": 1786196726.343,
+      "name": "retract",
+      "success": true,
+      "steps": 5,
+      "pos_err": 0.0079,
+      "rot_err": 0.0073,
+      "stopped_by_contact": false
+    },
+    {
+      "stage": "motion_stage",
+      "t": 1786196730.272,
+      "name": "return_home",
+      "success": true,
+      "steps": 7,
+      "pos_err": 0.0078,
+      "rot_err": 0.0717,
+      "stopped_by_contact": false
+    },
+    {
+      "stage": "outcome",
+      "t": 1786196730.962,
+      "success": true,
+      "controller_success": true,
+      "in_bin_xy": "True",
+      "pos_before": [
+        -0.0896,
+        -0.0939,
+        0.8894
+      ],
+      "pos_after": [
+        0.2096,
+        0.0033,
+        0.947
+      ],
+      "failure_reason": null,
+      "dt": 26.543
+    }
+  ]
+}
